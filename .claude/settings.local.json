@@ -49,9 +49,14 @@
       "Bash(Format-Table -AutoSize -Wrap)",
       "Bash(findstr /V \".pio\")",
       "Bash(findstr /V \".git\\\\\\\\\")",
+      "Bash(cmd.exe /c \"dir /s /b H:\\\\HandSignRecognition\\\\Alpha\\\\Hall-BNO085-PlatformIOArduino\")"
+>>>>>>> 8574bb1 (Use dynamic TFLite interpreter and misc fixes)
       "Bash(findstr /V \"node_modules\")",
       "Bash(cmd.exe /c \"dir /s /b H:\\\\HandSignRecognition\\\\Alpha\\\\Hall-BNO085-PlatformIOArduino\")",
       "Bash(grep -E '\\\\.\\(bat|cmd|ps1\\)$')"
+=======
+      "Bash(cmd.exe /c \"dir /s /b H:\\\\HandSignRecognition\\\\Alpha\\\\Hall-BNO085-PlatformIOArduino\")"
+>>>>>>> 8574bb1 (Use dynamic TFLite interpreter and misc fixes)
     ]
   }
 }
