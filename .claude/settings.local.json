@@ -50,7 +50,8 @@
       "Bash(findstr /V \".pio\")",
       "Bash(findstr /V \".git\\\\\\\\\")",
       "Bash(findstr /V \"node_modules\")",
-      "Bash(cmd.exe /c \"dir /s /b H:\\\\HandSignRecognition\\\\Alpha\\\\Hall-BNO085-PlatformIOArduino\")"
+      "Bash(cmd.exe /c \"dir /s /b H:\\\\HandSignRecognition\\\\Alpha\\\\Hall-BNO085-PlatformIOArduino\")",
+      "Bash(grep -E '\\\\.\\(bat|cmd|ps1\\)$')"
     ]
   }
 }
