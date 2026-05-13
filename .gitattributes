@@ -1,0 +1,172 @@
+# EdgeAI Data Glove V3 - Git Line Ending Configuration
+# This file ensures consistent LF line endings across Windows and Linux
+
+# Auto detect text files and perform LF normalization
+* text=auto eol=lf
+
+# Source code - Force LF
+*.c text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.hpp text eol=lf
+*.py text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.jsx text eol=lf
+*.cs text eol=lf
+
+# Configuration files - Force LF
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.ini text eol=lf
+*.cfg text eol=lf
+*.conf text eol=lf
+
+# Documentation - Force LF
+*.md text eol=lf
+*.txt text eol=lf
+*.rst text eol=lf
+*.adoc text eol=lf
+
+# Build files - Force LF
+Makefile text eol=lf
+*.mk text eol=lf
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
+platformio.ini text eol=lf
+
+# Shell scripts - Force LF (critical for Linux)
+*.sh text eol=lf
+*.bash text eol=lf
+*.zsh text eol=lf
+
+# Windows scripts - Keep CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.vbs text eol=crlf
+*.reg text eol=crlf
+
+# Web files - Force LF
+*.html text eol=lf
+*.css text eol=lf
+*.scss text eol=lf
+*.less text eol=lf
+*.svg text eol=lf
+*.xml text eol=lf
+
+# Protocol Buffers - Force LF
+*.proto text eol=lf
+
+# Git files
+.gitattributes text eol=lf
+.gitignore text eol=lf
+.gitconfig text eol=lf
+
+# VS Code settings
+.vscode/*.json text eol=lf
+*.code-workspace text eol=lf
+
+# Python specific
+*.ipynb text eol=lf
+requirements*.txt text eol=lf
+setup.py text eol=lf
+pyproject.toml text eol=lf
+
+# Node.js specific
+package.json text eol=lf
+package-lock.json text eol=lf
+yarn.lock text eol=lf
+pnpm-lock.yaml text eol=lf
+.npmrc text eol=lf
+
+# Unity specific
+*.unity binary
+*.prefab binary
+*.asset binary
+*.meta text eol=lf
+*.asmdef text eol=lf
+*.inputactions text eol=lf
+
+# Binary files - Do not modify
+text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.bmp binary
+*.tiff binary
+*.webp binary
+
+*.pdf binary
+*.doc binary
+*.docx binary
+*.xls binary
+*.xlsx binary
+*.ppt binary
+*.pptx binary
+
+*.zip binary
+*.gz binary
+*.tar binary
+*.rar binary
+*.7z binary
+*.bz2 binary
+*.xz binary
+
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.a binary
+*.lib binary
+
+*.bin binary
+*.hex binary
+*.elf binary
+*.uf2 binary
+
+*.wav binary
+*.mp3 binary
+*.mp4 binary
+*.ogg binary
+*.flac binary
+*.aac binary
+
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.eot binary
+
+# PlatformIO specific
+*.pio binary
+.pio/** binary
+
+# Node modules
+node_modules/** binary
+
+# Python
+__pycache__/** binary
+*.pyc binary
+*.pyo binary
+*.pyd binary
+
+# Virtual environments
+venv/** binary
+.venv/** binary
+env/** binary
+
+# IDE files
+.idea/** binary
+.vscode/** text=auto
+*.iml binary
+
+# OS files
+.DS_Store binary
+Thumbs.db binary
+desktop.ini binary
