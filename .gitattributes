@@ -92,7 +92,6 @@ pnpm-lock.yaml text eol=lf
 *.inputactions text eol=lf
 
 # Binary files - Do not modify
-text=auto eol=lf
 *.png binary
 *.jpg binary
 *.jpeg binary

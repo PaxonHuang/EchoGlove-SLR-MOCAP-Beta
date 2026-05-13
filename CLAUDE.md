@@ -86,6 +86,23 @@ npm run preview            # Preview production build
 
 **Vite Config:** `vite.config.ts` includes path alias `@/` pointing to `src/`
 
+### Unity Pro (glove_unity) - Windows Only
+
+**Platform**: Windows 10/11 with Unity 2022.3 LTS
+
+Unity 开发环境保留在 **Windows** 平台（Linux 支持有限）。
+
+```powershell
+cd glove_unity
+# Open in Unity Hub
+# Build: File -> Build Settings -> PC, Mac & Linux Standalone
+```
+
+**Requirements:**
+- Unity 2022.3 LTS or later
+- Windows 10/11 with Visual Studio 2022
+- XR Hands package (via Package Manager)
+
 ---
 
 ## Critical Bug Fix (FreeRTOS)
