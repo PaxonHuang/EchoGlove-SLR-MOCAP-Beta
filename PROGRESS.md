@@ -1,30 +1,18 @@
 # PROGRESS.md — Cross-Session State Tracker
 
-**Last updated**: 2026-05-06
+**Last updated**: 2026-05-15
 
 ---
 
-## MCP Plugin Status (Verified 2026-05-06)
+## MCP Plugin Status (Updated 2026-05-15)
 
 | Plugin          | Status  | Notes                                                                                                                  |
 | --------------- | ------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Playwright      | WORKING | `browser_tabs` list returns correctly                                                                                |
-| Chrome DevTools | WORKING | `list_pages` returns correctly                                                                                       |
-| Context7        | FAILING | `TypeError: fetch failed` — proxy at 127.0.0.1:15721 likely blocks direct API calls                                 |
-| GitHub MCP      | FAILING | `Authentication Failed: Bad credentials` — token added to settings.local.json, needs session restart to take effect |
-| Espressif Docs  | FAILING | `Socket connection closed unexpectedly` — server instability, may also be proxy-related                             |
-
-### GitHub MCP Fix Applied
-
-- Added `GITHUB_PERSONAL_ACCESS_TOKEN` env var to `.claude/settings.local.json`
-- Token scopes: `repo, public_repo` (sufficient for PRs, issues, code search)
-- **Action needed**: Restart Claude Code session for token to take effect
-
-### Context7 & Espressif Docs
-
-- Both fail with network errors — the proxy at `127.0.0.1:15721` (ANTHROPIC_BASE_URL) likely prevents MCP servers from making outbound HTTP calls
-- These are transient connection issues, not configuration problems
-- May work intermittently or after proxy/network changes
+| Playwright      | WORKING |                                                                                                                        |
+| Chrome DevTools | WORKING |                                                                                                                        |
+| Context7        | FAILING | Proxy routing issue (`127.0.0.1:15721`), intermittent                                                                 |
+| GitHub MCP      | FAILING | Token configured but needs session restart                                                                             |
+| Espressif Docs  | FAILING | Proxy-related, intermittent                                                                                            |
 
 ---
 
@@ -39,12 +27,37 @@ When starting a new session:
 
 ---
 
-## Completed Checkpoints
+## Windows → Ubuntu Migration (2026-05-15) — COMPLETE
 
-- [X] MCP plugin verification (2026-05-06) — Playwright + Chrome DevTools confirmed working, GitHub token configured, Context7/Espressif Docs have proxy issues
-- [X] PROGRESS.md created (2026-05-06)
-- [X] CLAUDE.md updated with MCP status section (2026-05-06)
-- [ ] Verify GitHub MCP works after session restart (needs restart to pick up env var)
+All cross-platform compatibility issues resolved. Build passes on Ubuntu 24.04.
+
+### Config Cleanup
+
+| File | Action |
+|------|--------|
+| `.claude/settings.json` | Cleared broken Windows hook (`H:/HandSignRecognition/...`) |
+| `.claude/settings.local.json` | Replaced with Ubuntu-native permissions (git, pio, npm, python) |
+| `.gitignore` | Added `.claude/settings.local.json` for per-OS local config |
+
+### Cross-Platform Line Endings
+
+`.gitattributes` enforces LF for all source code, CRLF only for `.bat/.ps1/.cmd/.vbs/.reg`.
+
+### Bugs Fixed During Migration (7 total)
+
+| # | File | Problem | Fix |
+|---|------|---------|-----|
+| 1 | `.claude/settings.json` | Windows absolute path in hook `H:/HandSignRecognition/...` | Cleared |
+| 2 | `.claude/settings.local.json` | 50+ PowerShell rules + `C:/Users/QuenchKidney/` paths | Ubuntu rules |
+| 3 | `SensorManager.h:44` | TMAG5273 has no default constructor | Array init in member initializer list |
+| 4 | `SensorManager.h:214` | `_imu.begin()` API changed (v1.2.5) | Changed to `begin_I2C()` |
+| 5 | `SensorManager.h:240/274` | `_sensor_value.type` API changed | Changed to `.sensorId` |
+| 6 | `FeatureNormalizer.h:34` | `FLT_MAX` not declared | Added `#include <cfloat>` |
+| 7 | `TMG5273.h:45/74/83` | Class-internal `namespace` invalid C++ | `namespace` → `struct` + `;` |
+
+### Build Status
+
+`pio run` → **2 succeeded** (esp32-s3-devkitc-1-n16r8 + debug), 2026-05-15
 
 ---
 
@@ -61,8 +74,6 @@ When starting a new session:
 | FlexManager placeholder     | `lib/Sensors/FlexManager.h`   | Complete (V3.0 returns zeros, V3.1 will use ADC)                         |
 | FreeRTOS dual-core tasks    | `src/main.cpp`                | Complete (static_assert validation, correct parameter order)             |
 
-**Key fix**: BNO085 uses `SH2_GAME_ROTATION_VECTOR` (no geomagnetic) per SOP spec §4.2, not `SH2_ROTATION_VECTOR`.
-
 ### Phase 2: Signal Processing & Data Acquisition — COMPLETE
 
 | Component                  | File                                | Status                                                          |
@@ -72,8 +83,6 @@ When starting a new session:
 | Feature Normalizer         | `lib/Filters/FeatureNormalizer.h` | Complete (Min-Max [0,1], 2s calibration, per-channel stats)     |
 | Pipeline integration       | `src/main.cpp`                    | Complete (readAll→toFeatureArray→normalize→push→queue→CSV) |
 | Serial CSV output          | `src/main.cpp`                    | Complete (Edge Impulse data forwarder compatible)               |
-
-**Build verified**: `pio run` exit code 0 (confirmed 2026-05-07)
 
 ### Signal Processing Pipeline Flow
 
@@ -100,3 +109,31 @@ Serial CSV output              → Edge Impulse compatible format
 ## Active Work
 
 **Next**: Phase 3 — L1 Edge Inference (TinyML / TFLite Micro)
+
+### Priority: Path A — Edge Impulse MVP (快速验证)
+
+Per SOP §6.1, ESP32 CSV output already compatible with `edge-impulse-data-forwarder`. Steps:
+
+1. Install edge-impulse-cli: `npm install -g edge-impulse-cli`
+2. Start data forwarder: `edge-impulse-data-forwarder`
+3. Collect labeled gesture data in Edge Impulse Studio
+4. Train 1D-CNN classifier (200 epochs, lr=0.001)
+5. Export as Arduino Library → integrate via PlatformIO `lib_deps`
+
+**Target**: 2-3 days to MVP verification
+
+Path B (PyTorch → TFLite INT8) deferred to Phase 3.5 Benchmark.
+
+### Phase Status Summary
+
+| Phase | Name | Status |
+|-------|------|--------|
+| P0 | Project init | Done |
+| P1 | HAL & drivers | Done |
+| P2 | Signal processing | Done |
+| P3 | L1 Edge Inference | **← NEXT** |
+| P3.5 | Model Benchmark | Pending |
+| P4 | Communication (BLE/UDP/Protobuf) | Scaffold exists |
+| P5 | Python Relay + L2 ST-GCN | Scaffold exists |
+| P6 | Web rendering / Unity Pro | Scaffold exists |
+| P7 | Integration testing | Pending |

@@ -40,15 +40,15 @@ public:
 
     SensorManager()
         : _mux(TCA9548A::DEFAULT_ADDR, &Wire),
-          _initialized(false), _imu_ok(false), _seq(0),
-          _imu(&Wire, 0x4A) {
-
-        // Create TMAG5273 instances, one per mux channel
-        _hall[0] = TMAG5273(&_mux, MuxChannels::HALL_SENSOR_0, TMAG5273::DEFAULT_ADDR, &Wire);
-        _hall[1] = TMAG5273(&_mux, MuxChannels::HALL_SENSOR_1, TMAG5273::DEFAULT_ADDR, &Wire);
-        _hall[2] = TMAG5273(&_mux, MuxChannels::HALL_SENSOR_2, TMAG5273::DEFAULT_ADDR, &Wire);
-        _hall[3] = TMAG5273(&_mux, MuxChannels::HALL_SENSOR_3, TMAG5273::DEFAULT_ADDR, &Wire);
-        _hall[4] = TMAG5273(&_mux, MuxChannels::HALL_SENSOR_4, TMAG5273::DEFAULT_ADDR, &Wire);
+          _hall{
+              TMAG5273(&_mux, MuxChannels::HALL_SENSOR_0, TMAG5273::DEFAULT_ADDR, &Wire),
+              TMAG5273(&_mux, MuxChannels::HALL_SENSOR_1, TMAG5273::DEFAULT_ADDR, &Wire),
+              TMAG5273(&_mux, MuxChannels::HALL_SENSOR_2, TMAG5273::DEFAULT_ADDR, &Wire),
+              TMAG5273(&_mux, MuxChannels::HALL_SENSOR_3, TMAG5273::DEFAULT_ADDR, &Wire),
+              TMAG5273(&_mux, MuxChannels::HALL_SENSOR_4, TMAG5273::DEFAULT_ADDR, &Wire)
+          },
+          _imu(),
+          _initialized(false), _imu_ok(false), _seq(0) {
     }
 
     // =========================================================================
@@ -211,7 +211,7 @@ private:
         // Select the IMU's mux channel
         _mux.selectChannel(MuxChannels::BNO085_IMU);
 
-        if (!_imu.begin(0x4A, &Wire)) {
+        if (!_imu.begin_I2C(0x4A, &Wire)) {
             Serial.println("[SensorManager] BNO085 begin() failed");
             _mux.disableAll();
             return false;
@@ -237,7 +237,7 @@ private:
         uint32_t t0 = millis();
         while (!_quat_report_received && (millis() - t0) < 500) {
             _imu.getSensorEvent(&_sensor_value);
-            if (_sensor_value.type == SH2_GAME_ROTATION_VECTOR) {
+            if (_sensor_value.sensorId == SH2_GAME_ROTATION_VECTOR) {
                 _quat_report_received = true;
             }
             delay(1);
@@ -271,7 +271,7 @@ private:
                 break;
             }
 
-            switch (_sensor_value.type) {
+            switch (_sensor_value.sensorId) {
                 case SH2_GAME_ROTATION_VECTOR: {
                     // Quaternion: w, x, y, z (normalized by BNO085, no magnetic)
                     float q_w = _sensor_value.un.gameRotationVector.real;

@@ -53,9 +53,9 @@ This is an ESP32-S3 hand sign recognition glove project using PlatformIO. Key co
 ## Build Commands
 
 ### Firmware (glove_firmware)
-```powershell
+```bash
 cd glove_firmware
-# Build (use PowerShell on Windows — bash produces no output)
+# Build
 pio run
 
 # Upload to ESP32-S3
@@ -110,6 +110,32 @@ cd glove_unity
 **V2 Bug**: `xTaskCreatePinnedToCore(TaskSensorReadHandle, ...)` — passed handle variable as function pointer
 
 **V3 Fix**: `xTaskCreatePinnedToCore(Task_SensorRead, ...)` — correct function pointer + `static_assert` validation
+
+---
+
+## Cross-Platform Development (Windows + Ubuntu)
+
+本项目支持 Windows 11 和 Ubuntu 24.04 协同开发，Line endings 由 `.gitattributes` 强制管理。
+
+| 文件类型 | 行尾 | 说明 |
+|---------|------|------|
+| 源代码 (.c/.cpp/.h/.py/.ts/.js 等) | LF | 全平台统一 |
+| Shell 脚本 (.sh/.bash) | LF | Linux 必须 |
+| Windows 脚本 (.bat/.ps1/.cmd) | CRLF | Windows 专有 |
+
+**关键规则**:
+- `.claude/settings.local.json` 已 gitignore，各平台独立配置
+- 修改 `.claude/settings.json` 时不要写平台特定路径
+- Unity 开发保留在 Windows（Linux 支持有限）
+- 固件构建前必须 `pio run` 验证，不可跳过
+
+### Ubuntu 构建注意事项
+
+ESP32 平台版本 `espressif32@^6.5.0`，新版编译器更严格：
+- 类内部不能使用 `namespace`（须用 `struct`）
+- Adafruit BNO08x v1.2.5 使用 `begin_I2C()` 而非 `begin()`
+- `sh2_SensorValue_t` 使用 `.sensorId` 而非 `.type`
+- 需显式 `#include <cfloat>` 才能使用 `FLT_MAX`
 
 ---
 
@@ -182,15 +208,19 @@ ESP32-S3                    Python Relay              Web Frontend
 
 ## Development Phases
 
-1. **P0**: Project init (PlatformIO + React + FastAPI)
-2. **P1**: HAL & drivers (TMAG5273, BNO085, TCA9548A)
-3. **P2**: Signal processing (Kalman filter)
-4. **P3**: L1 Edge Impulse / PyTorch training
-5. **P3.5**: Model Benchmark comparison
-6. **P4**: Communication (BLE provisioning + WiFi UDP)
-7. **P5**: Python Relay + L2 ST-GCN + NLP + TTS
-8. **P6**: Web rendering (React + R3F) / Unity Pro
-9. **P7**: Integration testing
+| Phase | Name | Status |
+|-------|------|--------|
+| P0 | Project init (PlatformIO + React + FastAPI) | Done |
+| P1 | HAL & drivers (TMAG5273, BNO085, TCA9548A) | Done |
+| P2 | Signal processing (Kalman filter, normalization, sliding window) | Done |
+| P3 | L1 Edge Inference — Edge Impulse MVP (path A) | **← ACTIVE** |
+| P3.5 | Model Benchmark comparison | Pending |
+| P4 | Communication (BLE provisioning + WiFi UDP) | Pending |
+| P5 | Python Relay + L2 ST-GCN + NLP + TTS | Pending |
+| P6 | Web rendering (React + R3F) / Unity Pro | Pending |
+| P7 | Integration testing | Pending |
+
+**Current task (P3 Path A)**: Use `edge-impulse-data-forwarder` with serial CSV output → train 1D-CNN in Edge Impulse → export Arduino library → integrate into firmware. See `PROGRESS.md` for details.
 
 ---
 
@@ -227,11 +257,8 @@ After modifying any source file in this project, always run `pio run` to verify 
 ## PlatformIO Dependency Notes
 
 - **lib_deps syntax**: Use `owner/libname @ version` (space before @), NOT `owner/libname=@version`
-- **TMAG5273**: Local driver in `lib/Sensors/TMG5273.h/.cpp` — do NOT add SparkFun TMAG5273 library to lib_deps (already in lib_deps for reference, but local implementation is used)
-- **TFLite Micro**: Use `tensorflow/tflite-micro-esp32` (ESP32 optimized)
-- **ESPAsyncUDP**: Use `mathieucarbou/ESPAsyncUDP` (note: registry availability may vary)
-- **Build on Windows**: Use PowerShell for `pio run` — bash produces no output on this system
-- **pio path**: `C:\Users\QuenchKidney\.platformio\penv\Scripts\pio.exe`
+- **TMAG5273**: Local driver in `lib/Sensors/TMG5273.h/.cpp` — do NOT add SparkFun TMAG5273 library to lib_deps
+- **TFLite Micro**: Use `tanakamasayuki/TensorFlowLite_ESP32` (ESP32 optimized)
 
 ## Library Architecture
 
@@ -283,16 +310,16 @@ Context7 and Espressif Docs failures are proxy-related (`127.0.0.1:15721`), not 
 
 ## Gotchas
 
-- Session continuation `.txt` files appear in `glove_firmware/` root — add `*this-session-is-being-continued*` to `.gitignore`
-- `pio pkg search` crashes with UnicodeEncodeError on Windows — use `Out-File` + `Get-Content` workaround in PowerShell
+- Session continuation `.txt` files in project root are ephemeral — can be deleted
 - **WebSocket Port**: Relay uses port **8765** for WebSocket (not 8000)
 - **UDP Port**: ESP32 sends to port **8888** (configured in `platformio.ini`)
 - **Relay Host**: Web frontend connects to `ws://${relayHost}:8765` — default is `localhost`
+- **File line endings**: Managed by `.gitattributes` — LF for all source, CRLF only for Windows scripts
 
 ## Testing
 
 ### Firmware Tests
-```powershell
+```bash
 cd glove_firmware
 pio test
 ```

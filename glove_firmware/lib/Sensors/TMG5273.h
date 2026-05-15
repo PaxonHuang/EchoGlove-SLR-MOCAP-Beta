@@ -42,7 +42,7 @@ public:
     // =========================================================================
     // TMAG5273 Register Map (TI native addresses)
     // =========================================================================
-    namespace Reg {
+    struct Reg {
         static constexpr uint8_t DEVICE_ID   = 0x00;  // R, 0x01 = TMAG5273
         static constexpr uint8_t X_MSB       = 0x01;  // R, [11:4] of X
         static constexpr uint8_t X_LSB       = 0x02;  // R, [3:0]  of X
@@ -68,22 +68,22 @@ public:
         static constexpr uint8_t SENS_CONFIG = 0x16;  // RW, sensitivity config
         static constexpr uint8_t ALERT_LOW   = 0x17;  // RW, low alert threshold
         static constexpr uint8_t ALERT_HIGH  = 0x18;  // RW, high alert threshold
-    }
+    };
 
     // CONV register bits
-    namespace ConvBits {
+    struct ConvBits {
         static constexpr uint8_t TRIGGER   = (1 << 4);  // Trigger single conversion
         static constexpr uint8_t NUM_AVG_1 = (0 << 0);  // 1× averaging
         static constexpr uint8_t NUM_AVG_4 = (1 << 0);  // 4× averaging
         static constexpr uint8_t NUM_AVG_16 = (2 << 0); // 16× averaging
         static constexpr uint8_t NUM_AVG_32 = (3 << 0); // 32× averaging
-    }
+    };
 
     // MAG_CONFIG register bits
-    namespace MagConfigBits {
+    struct MagConfigBits {
         static constexpr uint8_t RANGE_40MT = (1 << 4);  // ±40 mT
         static constexpr uint8_t RANGE_20MT = (0 << 4);  // ±20 mT
-    }
+    };
 
     // =========================================================================
     // Construction

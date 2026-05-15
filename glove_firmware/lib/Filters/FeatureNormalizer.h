@@ -20,6 +20,7 @@
 
 #include "data_structures.h"
 #include <cstring>
+#include <cfloat>
 #include <algorithm>
 
 class FeatureNormalizer {
