@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd H:/HandSignRecognition/Alpha/Hall-BNO085-PlatformIOArduino/glove_firmware && pio run 2>&1 | tail -5"
+          }
+        ]
+      }
+    ]
+  }
+}
