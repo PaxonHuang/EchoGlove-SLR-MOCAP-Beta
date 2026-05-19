@@ -1,0 +1,30 @@
+ ▐▛███▜▌   Claude Code v2.1.142
+▝▜█████▛▘  Opus 4.7 (1M context) · API Usage Billing
+  ▘▘ ▝▝    ~/CodingProjects/EchoGloveProjects/EchoGlove-SLR-MOCAP-Alpha
+
+❯ Help me fix the issues reported by /doctor below.                             
+                                                                                
+  For each issue: briefly explain what the fix will do, then ask me to confirm  
+  before running any shell command that deletes files, modifies global config,  
+  or changes my installation. Safe read-only checks are fine without asking. If 
+   a suggested fix looks wrong for my setup, say so instead of running it.      
+                                                                                
+  - Settings (/home/paxon/.claude/settings.json): Invalid or malformed JSON     
+  ⎿  Not logged in · Please run /login
+
+✻ Worked for 0s
+
+❯ /doctor 
+  ⎿  Claude Code diagnostics dismissed
+
+❯ /doctor 
+  ⎿  Claude Code diagnostics dismissed
+
+❯ /reload-plugins                                                               
+  ⎿  Reloaded: 12 plugins · 2 skills · 9 agents · 1 hook · 2 plugin MCP servers · 4 plugin LSP servers
+
+❯ /plugin                                                                       
+  ⎿  ✓ Installed clangd-lsp. Run /reload-plugins to apply.
+
+❯ /ide                                                                          
+  ⎿  Connected to Visual Studio Code.

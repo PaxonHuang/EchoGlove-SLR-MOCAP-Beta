@@ -23,7 +23,8 @@
       "Bash(pip3 show *)",
       "mcp__context7__resolve-library-id",
       "mcp__context7__query-docs",
-      "Bash(jobs -l)"
+      "Bash(jobs -l)",
+      "Skill(superpowers:brainstorming)"
     ]
   }
 }

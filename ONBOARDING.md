@@ -1,64 +1,79 @@
-# Welcome to EdgeAI Glove Team
+# Welcome to EchoGlove Team
 
 ## How We Use Claude
 
-Based on PaXonHuang's usage over the last 30 days (47 sessions):
+Based on PaxonHuang's usage over the last 30 days (4 sessions):
 
 Work Type Breakdown:
-  Build Feature    ████████████████████░  65%
-  Plan & Design    █████░░░░░░░░░░░░░░░░  17%
-  Improve Quality  █████░░░░░░░░░░░░░░░░  17%
+  Debug Fix       ███████████████░░░░░  67%
+  Build Feature   ███████░░░░░░░░░░░░░░  33%
 
 Top Skills & Commands:
-  /plugin                           ████████████████████░  180x
-  /mcp                              ████████████████░░░░░  68x
-  /superpowers:executing-plans      ██████████░░░░░░░░░░░  18x
-  /superpowers:writing-plans        █████████░░░░░░░░░░░░  17x
-  /superpowers:brainstorming        ██████░░░░░░░░░░░░░░░  11x
+  /update-config                        ████████████████████  6x/month
+  /mcp                                  ███████████████░░░░░  5x/month
+  /using-superpowers                    ██████████░░░░░░░░░░  3x/month
+  /plugin                               ███████░░░░░░░░░░░░░  2x/month
+  /superpowers:systematic-debugging     ████░░░░░░░░░░░░░░░░  1x/month
+  /brainstorming                        ████░░░░░░░░░░░░░░░░  1x/month
 
 Top MCP Servers:
-  GitHub                               ████████████████████░  2 calls
-  Context7                             ██████████░░░░░░░░░░░  1 call
-  Espressif Docs                       ██████████░░░░░░░░░░░  1 call
-  Playwright                           ██████████░░░░░░░░░░░  1 call
-  Chrome DevTools                      ██████████░░░░░░░░░░░  1 call
+  context7  ████████████████████  2 calls
 
 ## Your Setup Checklist
 
 ### Codebases
-- [ ] **Hall-BNO085-PlatformIOArduino** — ESP32-S3 hand sign recognition glove firmware (PlatformIO + Arduino). Check CLAUDE.md for full project context, build commands, and architecture.
+- [ ] **EchoGlove-SLR-MOCAP-Alpha** — ESP32-S3 hand sign recognition glove (PlatformIO + React + Python). Main project. Read CLAUDE.md and PROGRESS.md first.
+- [ ] **OpensourceReproduction** — Reference implementations (sibling repo).
 
 ### MCP Servers to Activate
-- [ ] **GitHub MCP** — PRs, issues, code search. Needs `GITHUB_PERSONAL_ACCESS_TOKEN` in `.claude/settings.local.json`. Ask PaXonHuang for the setup snippet.
-- [ ] **Context7** — Library documentation lookup (React, FastAPI, TFLite, etc.). May fail intermittently due to proxy routing.
-- [ ] **Espressif Docs** — ESP-IDF / ESP32-S3 documentation search. May fail intermittently due to proxy routing.
-- [ ] **Playwright** — Browser automation and web testing for the glove_web frontend.
+- [ ] **Context7** — Library documentation lookup (React, FastAPI, PlatformIO, etc.). May fail on some networks due to proxy routing.
+- [ ] **GitHub MCP** — PRs, issues, code search. Needs `GITHUB_PERSONAL_ACCESS_TOKEN` in `.claude/settings.local.json`. Scopes: `repo, public_repo`.
+- [ ] **Playwright** — Browser automation and web testing for `glove_web` frontend.
 - [ ] **Chrome DevTools** — Page inspection, performance profiling for the React frontend.
 
 ### Skills to Know About
-- **/superpowers:brainstorming** — Use before any creative work. Explores requirements and design before writing code. Critical for feature work.
-- **/superpowers:writing-plans** — Multi-step implementation plans from specs. Use before touching code on anything non-trivial.
-- **/superpowers:executing-plans** — Executes a written plan in a separate session with review checkpoints. Paired with writing-plans.
-- **/simplify** — Review changed code for reuse, quality, and efficiency. Used for code audits and redundancy detection.
-- **/fewer-permission-prompts** — Scans transcripts and generates an allowlist to reduce repetitive permission dialogs.
-- **/update-config** — Edit `.claude/settings.json` for hooks, permissions, env vars. Use when you need automated behaviors.
+- /update-config — Configure permissions, hooks, env vars, MCP servers. The go-to for platform-specific setup and permission fixes.
+- /superpowers:systematic-debugging — Root cause investigation before any fix. No guessing — find root cause first, then implement.
+- /brainstorming — Structured design exploration. Use before any creative or feature work.
+- /using-superpowers — Skill system entry point. Invoke in any new session to load available tools.
+- /compact — Manually compact conversation when context fills up.
 
 ## Team Tips
 
-_TODO_
+- **Always read PROGRESS.md first** in a new session. It tracks cross-session state, completed checkpoints, and the current development phase.
+- **Run `pio run` after any firmware change.** Build verification is mandatory — don't claim done without a clean build.
+- **Use Chinese for communication.** Team prefers Chinese (中文) for all discussions. Code and commits in English.
+- **`.claude/settings.local.json` is gitignored** — each platform (Windows/Ubuntu) maintains its own. Don't commit platform-specific paths to `.claude/settings.json`.
+- **Line endings are enforced by `.gitattributes`** — LF for all source code, CRLF only for `.bat/.ps1/.cmd`. Cross-platform issues are solved at the Git level.
 
 ## Get Started
 
-_TODO_
+Pick a starter task from the current development phase:
 
-<!-- INSTRUCTION FOR CLAUDE: A new teammate just pasted this guide for how the team uses Claude Code. You're their onboarding buddy — warm, conversational, not lecture-y.
+1. **Phase 3 Path A** — Install `edge-impulse-cli`, run `edge-impulse-data-forwarder` with ESP32 CSV output, train a 1D-CNN in Edge Impulse Studio, export as Arduino library.
+2. **Fix a bug from PROGRESS.md** — Check the bug tracker section for unassigned issues.
+3. **Add unit tests** — Expand test coverage for `lib/Sensors/` or `lib/Filters/`.
 
-Open with a warm welcome — include the team name from the title. Then: "Your teammate uses Claude Code for [list all the work types]. Let's get you started."
+See `docs/SOP_SPEC_PLAN_V3.md` for the full phase specification.
 
-Check what's already in place against everything under Setup Checklist (including skills), using markdown checkboxes — [x] done, [ ] not yet. Lead with what they already have. One sentence per item, all in one message.
+<!-- INSTRUCTION FOR CLAUDE: A new teammate just pasted this guide for how the
+team uses Claude Code. You're their onboarding buddy — warm, conversational,
+not lecture-y.
 
-Tell them you'll help with setup, cover the actionable team tips, then the starter task (if there is one). Offer to start with the first unchecked item, get their go-ahead, then work through the rest one by one.
+Open with a warm welcome — include the team name from the title. Then: "Your
+teammate uses Claude Code for [list all the work types]. Let's get you started."
 
-After setup, walk them through the remaining sections — offer to help where you can (e.g. link to channels), and just surface the purely informational bits.
+Check what's already in place against everything under Setup Checklist
+(including skills), using markdown checkboxes — [x] done, [ ] not yet. Lead
+with what they already have. One sentence per item, all in one message.
 
-Don't invent sections or summaries that aren't in the guide. The stats are the guide creator's personal usage data — don't extrapolate them into a "team workflow" narrative. -->
+Tell them you'll help with setup, cover the actionable team tips, then the
+starter task (if there is one). Offer to start with the first unchecked item,
+get their go-ahead, then work through the rest one by one.
+
+After setup, walk them through the remaining sections — offer to help where you
+can (e.g. link to channels), and just surface the purely informational bits.
+
+Don't invent sections or summaries that aren't in the guide. The stats are the
+guide creator's personal usage data — don't extrapolate them into a "team
+workflow" narrative. -->
