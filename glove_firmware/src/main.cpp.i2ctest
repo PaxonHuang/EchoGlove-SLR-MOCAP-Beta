@@ -1,0 +1,76 @@
+/* Minimal I2C test — only test the two specific addresses we care about.
+ * Uses a task-based approach to avoid blocking if Wire hangs.
+ */
+
+#include <Arduino.h>
+#include <Wire.h>
+
+#define SDA_PIN 8
+#define SCL_PIN 9
+
+void testAddress(uint8_t addr, const char* name) {
+    Serial.printf("Testing %s (0x%02X)... ", name, addr);
+    Serial.flush();
+
+    Wire.beginTransmission(addr);
+    uint8_t err = Wire.endTransmission();
+
+    Serial.printf("err=%d", err);
+    if (err == 0) Serial.print(" FOUND!");
+    else if (err == 2) Serial.print(" TIMEOUT");
+    else if (err == 5) Serial.print(" NACK (no device)");
+    else if (err == 7) Serial.print(" BUS ERROR");
+    Serial.println();
+    Serial.flush();
+}
+
+void setup() {
+    Serial.begin(115200);
+    while (!Serial) delay(10);
+    delay(2000);
+
+    Serial.println("\n=== Minimal I2C Test ===");
+
+    // Check GPIO states before Wire.init
+    pinMode(SDA_PIN, INPUT_PULLUP);
+    pinMode(SCL_PIN, INPUT_PULLUP);
+    delay(1);
+    Serial.printf("GPIO idle: SDA=%d, SCL=%d\n", digitalRead(SDA_PIN), digitalRead(SCL_PIN));
+
+    // Initialize I2C at 100kHz (slow = more reliable for debugging)
+    Serial.println("Initializing I2C at 100kHz...");
+    Wire.begin(SDA_PIN, SCL_PIN, 100000);
+    Wire.setTimeOut(50);
+    Serial.println("I2C init done");
+
+    // Test only the addresses we care about
+    testAddress(0x70, "TCA9548A");
+    testAddress(0x4A, "BNO085");
+    testAddress(0x22, "TMAG5273");
+
+    // Also try writing to TCA9548A
+    Serial.println("Write test: TCA9548A select channel 0...");
+    Wire.beginTransmission(0x70);
+    Wire.write(0x01);  // Select channel 0
+    uint8_t werr = Wire.endTransmission();
+    Serial.printf("Write err=%d\n", werr);
+
+    if (werr == 0) {
+        // Now check if BNO085 appears on channel 5
+        Serial.println("Switching to channel 5 (BNO085)...");
+        Wire.beginTransmission(0x70);
+        Wire.write(0x20);  // Select channel 5
+        Wire.endTransmission();
+        delay(1);
+        testAddress(0x4A, "BNO085 via mux Ch5");
+    }
+
+    // Disable all mux channels
+    Wire.beginTransmission(0x70);
+    Wire.write(0x00);
+    Wire.endTransmission();
+
+    Serial.println("=== Test complete ===");
+}
+
+void loop() { delay(5000); }

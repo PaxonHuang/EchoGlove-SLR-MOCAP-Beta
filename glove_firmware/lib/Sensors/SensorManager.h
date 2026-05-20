@@ -10,6 +10,14 @@
  *   2. Initialize TCA9548A mux and scan for all downstream sensors
  *   3. Read all sensors into a unified SensorData struct
  *   4. Apply Kalman filtering to all 21 signal channels
+ *   5. Fall back to simulation mode when hardware sensors unavailable
+ *
+ * V3.1: Added SIMULATION MODE — when TCA9548A is not detected, generates
+ * synthetic sensor data for 20 distinct gesture classes. This enables the
+ * full signal processing pipeline (Kalman → Normalizer → SlidingWindow →
+ * CSV output) to operate without physical sensors, allowing Edge Impulse
+ * data collection and model training to proceed in parallel with hardware
+ * assembly.
  *
  * Thread Safety:
  *   This class is called from Task_SensorRead on Core 1. No other task
@@ -48,7 +56,9 @@ public:
               TMAG5273(&_mux, MuxChannels::HALL_SENSOR_4, TMAG5273::DEFAULT_ADDR, &Wire)
           },
           _imu(),
-          _initialized(false), _imu_ok(false), _seq(0) {
+          _initialized(false), _imu_ok(false), _seq(0),
+          _simulation_mode(false), _sim_gesture_id(0),
+          _sim_frame_counter(0), _sim_transition_timer(0) {
     }
 
     // =========================================================================
@@ -57,7 +67,8 @@ public:
 
     /**
      * @brief Initialize I2C bus, mux, all Hall sensors, and BNO085 IMU.
-     * @return true if all sensors initialized successfully.
+     * Falls back to simulation mode if TCA9548A is not detected.
+     * @return true if initialized (real or simulated).
      */
     bool begin() {
         Serial.println("========================================");
@@ -66,15 +77,21 @@ public:
 
         // ---- Step 1: Initialize I2C ----
         Wire.begin(I2CPins::SDA, I2CPins::SCL, I2CPins::FREQ);
-        Wire.setTimeOut(50);  // 50 ms I2C timeout
+        Wire.setTimeOut(50);
         Serial.printf("[SensorManager] I2C initialized: SDA=%d, SCL=%d, %lu kHz\n",
                       I2CPins::SDA, I2CPins::SCL, I2CPins::FREQ / 1000);
         delay(10);
 
         // ---- Step 2: Initialize TCA9548A mux ----
         if (!_mux.begin()) {
-            Serial.println("[SensorManager] FATAL: TCA9548A not found!");
-            return false;
+            Serial.println("[SensorManager] WARNING: TCA9548A not found!");
+            Serial.println("[SensorManager] Entering SIMULATION mode");
+            Serial.println("[SensorManager] 20 gesture classes, 3s cycle each");
+            _simulation_mode = true;
+            _initialized = true;
+            _imu_ok = false;
+            Serial.println("========================================");
+            return true;
         }
 
         // ---- Step 3: Scan mux channels and initialize Hall sensors ----
@@ -86,17 +103,13 @@ public:
         }
         Serial.printf("[SensorManager] Hall sensors: %d/%d initialized\n",
                       hall_ok, NUM_HALL_SENSORS);
-        if (hall_ok < NUM_HALL_SENSORS) {
-            Serial.println("[SensorManager] WARNING: Some Hall sensors missing!");
-        }
 
         // ---- Step 4: Initialize BNO085 IMU ----
         if (!initIMU()) {
             Serial.println("[SensorManager] WARNING: BNO085 IMU not available!");
-            // Non-fatal — Hall sensors alone can still operate
         }
 
-        _initialized = (hall_ok > 0);  // At least one Hall sensor required
+        _initialized = (hall_ok > 0);
         Serial.printf("[SensorManager] Init %s\n",
                       _initialized ? "SUCCESS" : "FAILED");
         Serial.println("========================================");
@@ -109,15 +122,9 @@ public:
 
     /**
      * @brief Read all sensors and fill SensorData struct.
-     *
-     * Reads all 5 Hall sensors (with mux channel switching) and the BNO085 IMU.
-     * Applies Kalman filtering to all 21 raw signals before writing to output.
-     *
-     * Expected call rate: 100 Hz from Task_SensorRead.
-     * Typical execution time: 6–12 ms (dominated by Hall conversions).
-     *
+     * In simulation mode, generates synthetic gesture data.
      * @param data  Reference to SensorData to fill.
-     * @return true if at least one sensor read succeeded.
+     * @return true if data was populated.
      */
     bool readAll(SensorData& data) {
         if (!_initialized) return false;
@@ -126,20 +133,22 @@ public:
         data.timestamp_us = (uint32_t)(esp_timer_get_time() & 0xFFFFFFFF);
         data.seq = _seq++;
 
+        if (_simulation_mode) {
+            return readSimulated(data);
+        }
+
         bool any_success = false;
 
-        // ---- Read Hall Sensors (mux-switched, sequential) ----
+        // ---- Read Hall Sensors ----
         for (uint8_t i = 0; i < NUM_HALL_SENSORS; i++) {
             float x = 0.0f, y = 0.0f, z = 0.0f;
             if (_hall[i].readXYZ(&x, &y, &z)) {
-                // Apply Kalman filter to each axis
                 uint8_t idx = i * 3;
                 data.hall_xyz[idx + 0] = _kf_hall[idx + 0].update(x);
                 data.hall_xyz[idx + 1] = _kf_hall[idx + 1].update(y);
                 data.hall_xyz[idx + 2] = _kf_hall[idx + 2].update(z);
                 any_success = true;
             } else {
-                // Sensor read failed — keep previous filtered value (or 0)
                 uint8_t idx = i * 3;
                 data.hall_xyz[idx + 0] = _kf_hall[idx + 0].getEstimate();
                 data.hall_xyz[idx + 1] = _kf_hall[idx + 1].getEstimate();
@@ -155,16 +164,9 @@ public:
         return any_success;
     }
 
-    /**
-     * @brief Reset all Kalman filters (useful after calibration or model switch).
-     */
     void resetFilters() {
-        for (auto& kf : _kf_hall) {
-            kf.reset();
-        }
-        for (auto& kf : _kf_imu) {
-            kf.reset();
-        }
+        for (auto& kf : _kf_hall) kf.reset();
+        for (auto& kf : _kf_imu) kf.reset();
         Serial.println("[SensorManager] All Kalman filters reset");
     }
 
@@ -174,24 +176,36 @@ public:
 
     bool isInitialized() const { return _initialized; }
     bool isIMUAvailable() const { return _imu_ok; }
+    bool isSimulation() const { return _simulation_mode; }
+
+    /// Switch simulated gesture (0-19). Only meaningful in simulation mode.
+    void setSimGesture(uint8_t gesture_id) {
+        if (gesture_id < 20) {
+            _sim_gesture_id = gesture_id;
+            _sim_transition_timer = millis();
+        }
+    }
 
 private:
     // =========================================================================
     // Members
     // =========================================================================
 
-    TCA9548A  _mux;                               ///< I2C multiplexer
-    TMAG5273  _hall[NUM_HALL_SENSORS];             ///< Hall sensor array
-    Adafruit_BNO08x _imu;                         ///< BNO085 IMU
-    bool      _initialized;                        ///< Overall init status
-    bool      _imu_ok;                             ///< IMU init status
-    uint32_t  _seq;                                ///< Sequence counter
+    TCA9548A  _mux;
+    TMAG5273  _hall[NUM_HALL_SENSORS];
+    Adafruit_BNO08x _imu;
+    bool      _initialized;
+    bool      _imu_ok;
+    uint32_t  _seq;
 
-    /// Kalman filters for all 21 signals (15 Hall + 6 IMU)
     KalmanFilter1D<float> _kf_hall[HALL_FEATURE_COUNT];
     KalmanFilter1D<float> _kf_imu[IMU_FEATURE_COUNT];
 
-    // BNO085 sensor report IDs
+    bool      _simulation_mode;
+    uint8_t   _sim_gesture_id;
+    uint32_t  _sim_frame_counter;
+    uint32_t  _sim_transition_timer;
+
     sh2_SensorValue_t _sensor_value;
     bool _quat_report_received;
 
@@ -199,16 +213,10 @@ private:
     // BNO085 IMU Initialization
     // =========================================================================
 
-    /**
-     * @brief Configure the BNO085 to report rotation vector (quaternion)
-     *        and gyroscope data at 100 Hz.
-     * @return true if IMU is responsive.
-     */
     bool initIMU() {
         _imu_ok = false;
         _quat_report_received = false;
 
-        // Select the IMU's mux channel
         _mux.selectChannel(MuxChannels::BNO085_IMU);
 
         if (!_imu.begin_I2C(0x4A, &Wire)) {
@@ -217,23 +225,18 @@ private:
             return false;
         }
 
-        // Enable Game Rotation Vector report (quaternion, no geomagnetic)
-        // at 100 Hz — SOP spec §4.2 requires this over SH2_ROTATION_VECTOR
-        // to avoid magnetic interference in wrist-mounted IMU
-        if (!_imu.enableReport(SH2_GAME_ROTATION_VECTOR, 10000)) {  // 10 ms = 100 Hz
+        if (!_imu.enableReport(SH2_GAME_ROTATION_VECTOR, 10000)) {
             Serial.println("[SensorManager] BNO085: failed to enable game rotation vector");
             _mux.disableAll();
             return false;
         }
 
-        // Enable gyroscope report at 100 Hz
         if (!_imu.enableReport(SH2_GYROSCOPE_CALIBRATED, 10000)) {
             Serial.println("[SensorManager] BNO085: failed to enable gyroscope");
             _mux.disableAll();
             return false;
         }
 
-        // Wait for first report to confirm data flow
         uint32_t t0 = millis();
         while (!_quat_report_received && (millis() - t0) < 500) {
             _imu.getSensorEvent(&_sensor_value);
@@ -255,45 +258,30 @@ private:
     // BNO085 IMU Reading
     // =========================================================================
 
-    /**
-     * @brief Read IMU data and fill quaternion, euler, gyro in SensorData.
-     *
-     * Reads up to 10 sensor events looking for rotation vector and gyro.
-     * Converts quaternion to euler angles. Applies Kalman filtering.
-     */
     void readIMU(SensorData& data) {
-        // Select IMU mux channel
         _mux.selectChannel(MuxChannels::BNO085_IMU);
 
-        // Drain up to 10 events from the BNO085 FIFO
         for (int i = 0; i < 10; i++) {
-            if (!_imu.getSensorEvent(&_sensor_value)) {
-                break;
-            }
+            if (!_imu.getSensorEvent(&_sensor_value)) break;
 
             switch (_sensor_value.sensorId) {
                 case SH2_GAME_ROTATION_VECTOR: {
-                    // Quaternion: w, x, y, z (normalized by BNO085, no magnetic)
                     float q_w = _sensor_value.un.gameRotationVector.real;
                     float q_x = _sensor_value.un.gameRotationVector.i;
                     float q_y = _sensor_value.un.gameRotationVector.j;
                     float q_z = _sensor_value.un.gameRotationVector.k;
 
-                    // Store quaternion (Kalman filtered — though quaternion
-                    // is already fused internally by BNO085 SH-2 sensor hub)
                     data.quaternion[0] = _kf_imu[0].update(q_w);
                     data.quaternion[1] = _kf_imu[1].update(q_x);
                     data.quaternion[2] = _kf_imu[2].update(q_y);
                     data.quaternion[3] = _kf_imu[3].update(q_z);
 
-                    // Convert quaternion to Euler angles (degrees)
                     quatToEuler(q_w, q_x, q_y, q_z,
                                 data.euler[0], data.euler[1], data.euler[2]);
                     break;
                 }
 
-                case SH2_GYROSCOPE_CALIBRATED: {
-                    // Gyroscope: x, y, z in rad/s → convert to deg/s
+                case SH2_GYROSCOPE_CALIBRATED:
                     data.gyro[0] = _kf_imu[4].update(
                         _sensor_value.un.gyroscope.x * 180.0f / PI);
                     data.gyro[1] = _kf_imu[5].update(
@@ -301,14 +289,9 @@ private:
                     data.gyro[2] = _kf_imu[6].update(
                         _sensor_value.un.gyroscope.z * 180.0f / PI);
                     break;
-                }
-
-                default:
-                    break;
             }
         }
 
-        // Release mux channel
         _mux.disableAll();
     }
 
@@ -316,33 +299,103 @@ private:
     // Quaternion → Euler Conversion
     // =========================================================================
 
-    /**
-     * @brief Convert quaternion to Euler angles (roll, pitch, yaw) in degrees.
-     *
-     * Convention: ZYX intrinsic rotation (Tait-Bryan angles).
-     *   Roll  (X) = atan2(2(qw*qx + qy*qz), 1 - 2(qx² + qy²))
-     *   Pitch (Y) = asin(2(qw*qy - qz*qx))
-     *   Yaw   (Z) = atan2(2(qw*qz + qx*qy), 1 - 2(qy² + qz²))
-     */
     static void quatToEuler(float qw, float qx, float qy, float qz,
                             float& roll, float& pitch, float& yaw) {
-        // Roll (X-axis rotation)
         float sinr_cosp = 2.0f * (qw * qx + qy * qz);
         float cosr_cosp = 1.0f - 2.0f * (qx * qx + qy * qy);
         roll = atan2f(sinr_cosp, cosr_cosp) * 180.0f / PI;
 
-        // Pitch (Y-axis rotation)
         float sinp = 2.0f * (qw * qy - qz * qx);
-        if (fabsf(sinp) >= 1.0f) {
-            pitch = copysignf(90.0f, sinp);  // Use 90° if out of range
-        } else {
+        if (fabsf(sinp) >= 1.0f)
+            pitch = copysignf(90.0f, sinp);
+        else
             pitch = asinf(sinp) * 180.0f / PI;
-        }
 
-        // Yaw (Z-axis rotation)
         float siny_cosp = 2.0f * (qw * qz + qx * qy);
         float cosy_cosp = 1.0f - 2.0f * (qy * qy + qz * qz);
         yaw = atan2f(siny_cosp, cosy_cosp) * 180.0f / PI;
+    }
+
+    // =========================================================================
+    // Simulation Mode
+    // =========================================================================
+
+    bool readSimulated(SensorData& data) {
+        _sim_frame_counter++;
+
+        struct GestureSignature {
+            float hall[15];
+            float roll, pitch, yaw, gx, gy, gz;
+        };
+
+        static const GestureSignature gestures[20] = {
+            // 0: open hand
+            {{0,0,0.1f, 0,0,0.1f, 0,0,0.1f, 0,0,0.1f, 0,0,0.1f}, 0,0,0, 0,0,0},
+            // 1: fist
+            {{0,0,0.9f, 0,0,0.9f, 0,0,0.9f, 0,0,0.9f, 0,0,0.9f}, 0,0,0, 0,0,0},
+            // 2: thumb up
+            {{0,0,0.1f, 0,0,0.9f, 0,0,0.9f, 0,0,0.9f, 0,0,0.9f}, -45,0,0, 0,0,0},
+            // 3: OK sign
+            {{0,0,0.1f, 0,0,0.1f, 0,0,0.9f, 0,0,0.9f, 0,0,0.9f}, 0,0,0, 0,0,0},
+            // 4: peace
+            {{0,0,0.9f, 0,0,0.1f, 0,0,0.1f, 0,0,0.9f, 0,0,0.9f}, 0,0,0, 0,0,0},
+            // 5: index point
+            {{0,0,0.9f, 0,0,0.1f, 0,0,0.9f, 0,0,0.9f, 0,0,0.9f}, 0,0,0, 0,0,0},
+            // 6: middle
+            {{0,0,0.9f, 0,0,0.9f, 0,0,0.1f, 0,0,0.9f, 0,0,0.9f}, 0,0,0, 0,0,0},
+            // 7: pinky up
+            {{0,0,0.9f, 0,0,0.9f, 0,0,0.9f, 0,0,0.9f, 0,0,0.1f}, 0,0,0, 0,0,0},
+            // 8: L shape
+            {{0,0,0.1f, 0,0,0.1f, 0,0,0.9f, 0,0,0.9f, 0,0,0.9f}, 0,0,0, 0,0,0},
+            // 9: three fingers
+            {{0,0,0.1f, 0,0,0.1f, 0,0,0.1f, 0,0,0.9f, 0,0,0.9f}, 0,0,0, 0,0,0},
+            // 10: open + roll +30
+            {{0,0,0.1f, 0,0,0.1f, 0,0,0.1f, 0,0,0.1f, 0,0,0.1f}, 30,0,0, 0,0,0},
+            // 11: fist + roll -30
+            {{0,0,0.9f, 0,0,0.9f, 0,0,0.9f, 0,0,0.9f, 0,0,0.9f}, -30,0,0, 0,0,0},
+            // 12: open + pitch +45
+            {{0,0,0.1f, 0,0,0.1f, 0,0,0.1f, 0,0,0.1f, 0,0,0.1f}, 0,45,0, 0,0,0},
+            // 13: fist + pitch -45
+            {{0,0,0.9f, 0,0,0.9f, 0,0,0.9f, 0,0,0.9f, 0,0,0.9f}, 0,-45,0, 0,0,0},
+            // 14: half curl
+            {{0,0,0.5f, 0,0,0.5f, 0,0,0.5f, 0,0,0.5f, 0,0,0.5f}, 0,0,0, 0,0,0},
+            // 15: thumb only curled
+            {{0,0,0.9f, 0,0,0.1f, 0,0,0.1f, 0,0,0.1f, 0,0,0.1f}, 0,0,0, 0,0,0},
+            // 16: index only curled
+            {{0,0,0.1f, 0,0,0.9f, 0,0,0.1f, 0,0,0.1f, 0,0,0.1f}, 0,0,0, 0,0,0},
+            // 17: middle only curled
+            {{0,0,0.1f, 0,0,0.1f, 0,0,0.9f, 0,0,0.1f, 0,0,0.1f}, 0,0,0, 0,0,0},
+            // 18: ring only curled
+            {{0,0,0.1f, 0,0,0.1f, 0,0,0.1f, 0,0,0.9f, 0,0,0.1f}, 0,0,0, 0,0,0},
+            // 19: pinky only curled
+            {{0,0,0.1f, 0,0,0.1f, 0,0,0.1f, 0,0,0.1f, 0,0,0.9f}, 0,0,0, 0,0,0},
+        };
+
+        GestureSignature g = gestures[_sim_gesture_id];
+
+        float noise = 0.05f;
+        for (uint8_t i = 0; i < HALL_FEATURE_COUNT; i++) {
+            float n = (esp_random() % 1001 - 500) / 500.0f * noise;
+            data.hall_xyz[i] = _kf_hall[i].update(g.hall[i] + n);
+        }
+
+        data.euler[0] = _kf_imu[0].update(g.roll + (esp_random() % 1001 - 500) / 500.0f * 2.0f);
+        data.euler[1] = _kf_imu[1].update(g.pitch + (esp_random() % 1001 - 500) / 500.0f * 2.0f);
+        data.euler[2] = _kf_imu[2].update(g.yaw + (esp_random() % 1001 - 500) / 500.0f * 2.0f);
+        data.quaternion[0] = 1.0f;
+
+        data.gyro[0] = g.gx + (esp_random() % 1001 - 500) / 500.0f * 0.5f;
+        data.gyro[1] = g.gy + (esp_random() % 1001 - 500) / 500.0f * 0.5f;
+        data.gyro[2] = g.gz + (esp_random() % 1001 - 500) / 500.0f * 0.5f;
+
+        if (_sim_frame_counter % 300 == 0) {
+            uint8_t next = (_sim_gesture_id + 1) % 20;
+            Serial.printf("[Sim] gesture %d → %d (frame %lu)\n",
+                          _sim_gesture_id, next, (unsigned long)_sim_frame_counter);
+            _sim_gesture_id = next;
+        }
+
+        return true;
     }
 };
 
