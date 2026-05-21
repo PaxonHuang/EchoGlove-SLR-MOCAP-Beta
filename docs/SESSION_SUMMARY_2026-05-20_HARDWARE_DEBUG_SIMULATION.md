@@ -16,7 +16,7 @@
 
 ### Hardware Readiness
 - **ESP32-S3-DevKitC-1 N16R8**: Connected via USB CDC (port: `/dev/ttyACM0`)
-- **TCA9548A I2C Multiplexer**: Wired but not responding on I2C (address 0x70)
+- **PCA9548A I2C Multiplexer**: Wired but not responding on I2C (address 0x70)
 - **BNO085 IMU**: Wired to mux Channel 5 but not responding
 - **TMAG5273 Hall Sensors**: Not yet arrived (5 sensors planned for Channels 0-4)
 - **Status**: Firmware operational, hardware debugging in progress
@@ -27,14 +27,14 @@
 
 ### Wiring Details
 
-**Main I2C Bus** (ESP32-S3 → TCA9548A):
+**Main I2C Bus** (ESP32-S3 → PCA9548A):
 ```
-ESP32-S3                TCA9548A               Notes
+ESP32-S3                PCA9548A               Notes
 ────────                ──────────             ─────
 GPIO8 (SDA)  ──────────→  SDA          Main bus data line
 GPIO9 (SCL)  ──────────→  SCL          Main bus clock line
-3.3V ──[5.1kΩ]── GPIO8                      Pull-up resistor (SDA)
-3.3V ──[5.1kΩ]── GPIO9                      Pull-up resistor (SCL)
+3.3V ──[2kΩ]── GPIO8                      Pull-up resistor (SDA)
+3.3V ──[2kΩ]── GPIO9                      Pull-up resistor (SCL)
 3.3V         ──────────→  VCC           Power supply
 GND          ──────────→  GND           Ground
 /RST         ──────────→  3.3V          Reset pin pulled high
@@ -47,7 +47,7 @@ GND          ──────────→  GND           Ground
 
 **BNO085 IMU Connection** (Channel 5):
 ```
-TCA9548A CH5            BNO085                 Notes
+PCA9548A CH5            BNO085                 Notes
 ───────────             ───────                ─────
 SD5         ──────────→  SDA           Channel 5 downstream bus
 SC5         ──────────→  SCL           Channel 5 downstream clock
@@ -61,11 +61,11 @@ PS1         ──────────→  GND           Address bit 1 = 0
 
 ### Pull-Up Resistor Configuration
 
-**Main Bus**: 5.1kΩ pull-ups (SDA/SCL) — **Installed**  
+**Main Bus**: 2kΩ pull-ups (SDA/SCL) — **Installed**  
 **Sub-Channels**: 4.7kΩ pull-ups — **Not installed** (will be added when TMAG5273 sensors arrive)
 
 **SOP Specification** (docs/HARDWARE_ASSEMBLY_GUIDE.md):  
-- Main bus: 2.2kΩ recommended (user used 5.1kΩ — acceptable but slower rise time)
+- Main bus: 2kΩ recommended (user used 2kΩ — acceptable but slower rise time)
 - Sub-channels: 4.7kΩ per downstream sensor bus
 
 ---
@@ -74,7 +74,7 @@ PS1         ──────────→  GND           Address bit 1 = 0
 
 ### 1. Simulation Mode Implementation
 
-**Decision**: Implement graceful degradation when TCA9548A is not detected  
+**Decision**: Implement graceful degradation when PCA9548A is not detected  
 **Reasoning**:
 - Hardware debugging takes time (physical wiring verification, multimeter measurements)
 - Firmware development should not be blocked by hardware issues
@@ -82,7 +82,7 @@ PS1         ──────────→  GND           Address bit 1 = 0
 - Allows parallel development tracks: firmware + hardware assembly
 
 **Implementation**:
-- Modified `SensorManager.h` to detect TCA9548A init failure
+- Modified `SensorManager.h` to detect PCA9548A init failure
 - Fall back to synthetic data generation for 20 gesture classes
 - Auto-cycle gestures every 3 seconds (300 frames @ 100Hz sampling)
 - Kalman filtering still applied to synthetic data (validates signal processing pipeline)
@@ -152,7 +152,7 @@ PS1         ──────────→  GND           Address bit 1 = 0
 
 **Solution**: Reduced scan to minimal address tests (0x70, 0x4A, 0x22) instead of full range
 
-**Code Location**: `lib/Sensors/TCA9548A.h` (I2C scanner implementation)
+**Code Location**: `lib/Sensors/PCA9548A.h` (I2C scanner implementation)
 
 ### 5. Build Error: Braces Around Scalar Initializer
 
@@ -176,16 +176,16 @@ static const GestureSignature gestures[20] = {
 
 **File Modified**: `lib/Sensors/SensorManager.h` (lines 331-372)
 
-### 6. I2C Devices Not Responding (TCA9548A, BNO085)
+### 6. I2C Devices Not Responding (PCA9548A, BNO085)
 
-**Symptom**: `I2C scan: err=5 (NACK)` for addresses 0x70 (TCA9548A) and 0x4A (BNO085)
+**Symptom**: `I2C scan: err=5 (NACK)` for addresses 0x70 (PCA9548A) and 0x4A (BNO085)
 
 **Status**: **UNRESOLVED** — hardware wiring verification needed
 
 **Suspected Causes**:
 - Devices may not be powered (no LEDs visible on modules)
 - Wiring not connected properly (jumper wires may be loose)
-- Pull-up resistors incorrect (5.1kΩ instead of recommended 2.2kΩ — may cause slow rise time)
+- Pull-up resistors incorrect (2kΩ instead of recommended 2kΩ — may cause slow rise time)
 
 **Next Action**: Follow DM40B multimeter debugging guide (see below)
 
@@ -246,7 +246,7 @@ bool begin() {
     // ... I2C initialization ...
     
     if (!_mux.begin()) {
-        Serial.println("[SensorManager] WARNING: TCA9548A not found!");
+        Serial.println("[SensorManager] WARNING: PCA9548A not found!");
         Serial.println("[SensorManager] Entering SIMULATION mode");
         Serial.println("[SensorManager] 20 gesture classes, 3s cycle each");
         _simulation_mode = true;
@@ -299,9 +299,9 @@ bool readSimulated(SensorData& data) {
 
 **Key Sections**:
 - Power supply verification (VCC/GND continuity)
-- I2C pull-up resistor measurement (5.1kΩ expected)
-- GPIO → TCA9548A SDA/SCL connectivity
-- TCA9548A /RST pin connection (must be HIGH)
+- I2C pull-up resistor measurement (2kΩ expected)
+- GPIO → PCA9548A SDA/SCL connectivity
+- PCA9548A /RST pin connection (must be HIGH)
 - BNO085 power, I2C bus (CH5), address pins (PS0/PS1)
 - I2C idle state voltage measurement (GPIO8/9 should be 3.3V)
 - Safety precautions (resistance measurements only with power OFF)
@@ -320,7 +320,7 @@ ESP32-S3 Firmware (Simulation Mode)
 
 Task_SensorRead (Core 1, 100Hz):
     ├─ SensorManager.readAll()
-    │  ├─ TCA9548A.begin() → FAIL → _simulation_mode = true
+    │  ├─ PCA9548A.begin() → FAIL → _simulation_mode = true
     │  └─ readSimulated(data)
     │     ├─ Select gesture from gestures[20] array
     │     ├─ Add Gaussian noise (±0.05 for hall, ±2.0° for euler)
@@ -358,16 +358,16 @@ Example:
 
 **Phase 1: Power Supply** (ESP32-S3 OFF → ON)
 - Measure 3.3V rail voltage (should be 3.25-3.35V)
-- Verify TCA9548A VCC/GND connections (0Ω continuity)
+- Verify PCA9548A VCC/GND connections (0Ω continuity)
 
 **Phase 2: Pull-Up Resistors** (ESP32-S3 OFF)
-- Measure GPIO8 → 3.3V resistance (~5.1kΩ)
-- Measure GPIO9 → 3.3V resistance (~5.1kΩ)
+- Measure GPIO8 → 3.3V resistance (~2kΩ)
+- Measure GPIO9 → 3.3V resistance (~2kΩ)
 - Verify no shorts to ground
 
 **Phase 3: I2C Bus Connectivity** (ESP32-S3 OFF)
-- GPIO8 → TCA9548A SDA (0Ω)
-- GPIO9 → TCA9548A SCL (0Ω)
+- GPIO8 → PCA9548A SDA (0Ω)
+- GPIO9 → PCA9548A SCL (0Ω)
 - No cross-short between SDA/SCL
 
 **Phase 4: Idle State Verification** (ESP32-S3 ON)
@@ -375,7 +375,7 @@ Example:
 - GPIO9 voltage = 3.3V (pull-up working)
 
 **Phase 5: Device-Specific Checks**
-- TCA9548A /RST pin → 3.3V (must be HIGH)
+- PCA9548A /RST pin → 3.3V (must be HIGH)
 - BNO085 PS0/PS1 → GND (address 0x4A)
 
 **Tools Required**:
@@ -394,13 +394,13 @@ Example:
 1. **Hardware Verification** (User action):
    - Follow `docs/HARDWARE_WIRING_DEBUG_GUIDE_DM40B.md`
    - Use DM40B multimeter to verify all physical connections
-   - Check if TCA9548A and BNO085 modules show power LEDs
+   - Check if PCA9548A and BNO085 modules show power LEDs
    - Measure GPIO8/9 idle voltage (should be 3.3V)
 
 2. **If Wiring Verified → Re-test I2C**:
    - Power cycle ESP32-S3
    - Run minimal I2C scanner (addresses 0x70, 0x4A only)
-   - If TCA9548A responds → test BNO085 on Channel 5
+   - If PCA9548A responds → test BNO085 on Channel 5
    - If still fails → try replacement modules or different I2C speed (100kHz instead of 400kHz)
 
 3. **TMAG5273 Sensor Arrival** (Future):
@@ -477,15 +477,15 @@ Example:
 ## Known Issues
 
 1. **I2C Devices Not Responding**:
-   - TCA9548A (0x70) and BNO085 (0x4A) not detected
+   - PCA9548A (0x70) and BNO085 (0x4A) not detected
    - Requires hardware wiring verification with multimeter
    - Simulation mode allows development to proceed independently
 
 2. **Pull-Up Resistor Value**:
-   - Used 5.1kΩ instead of SOP-recommended 2.2kΩ
+   - Used 2kΩ instead of SOP-recommended 2kΩ
    - May cause slower rise time on I2C bus
    - Could affect communication reliability at 400kHz
-   - Consider switching to 2.2kΩ if I2C issues persist
+   - Consider switching to 2kΩ if I2C issues persist
 
 3. **Sub-Channel Pull-Ups**:
    - Not installed yet (TMAG5273 sensors not connected)

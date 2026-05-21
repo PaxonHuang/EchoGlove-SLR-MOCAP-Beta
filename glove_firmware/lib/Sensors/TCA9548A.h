@@ -1,9 +1,12 @@
 /* =============================================================================
- * EdgeAI Data Glove V3 — TCA9548A I2C Multiplexer Driver
+ * EdgeAI Data Glove V3 — TCA9548A / PCA9548A I2C Multiplexer Driver
  * =============================================================================
  * Header-only convenience wrapper around the 8-channel I2C mux.
  * All 5 TMAG5273 Hall sensors share one I2C bus through this mux.
- * The BNO085 IMU sits on a dedicated mux channel (ch7).
+ * The BNO085 IMU sits on a dedicated mux channel (ch5).
+ *
+ * NOTE: PCA9548A (NXP) and TCA9548A (TI) are register-compatible.
+ * This driver works with both. Actual hardware: PCA9548A breakout.
  *
  * CRITICAL USAGE PATTERN:
  *   1. Call disableAll() first
@@ -12,7 +15,7 @@
  *   channels — the V2 code only called selectChannel() and suffered
  *   intermittent I2C lockups.
  *
- * Hardware: TCA9548A, default address 0x70, 3.3V, 400 kHz I2C
+ * Hardware: PCA9548A, default address 0x70, 3.3V, 400 kHz I2C
  * =============================================================================
  */
 

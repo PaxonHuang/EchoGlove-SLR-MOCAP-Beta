@@ -1,6 +1,6 @@
 # PROGRESS.md — Cross-Session State Tracker
 
-**Last updated**: 2026-05-15
+**Last updated**: 2026-05-21
 
 ---
 
@@ -106,23 +106,97 @@ Serial CSV output              → Edge Impulse compatible format
 
 ---
 
+## Hardware Debug & Simulation Mode (2026-05-20) — IN PROGRESS
+
+### Context
+
+ESP32-S3 connected to Ubuntu via USB CDC (`/dev/ttyACM0`). Hardware partially wired:
+- **PCA9548A mux** (兼容TCA9548A): Connected on GPIO8/9 with **2kΩ** pull-ups — **not responding on I2C** (err=5 NACK)
+- **GY-BNO085 IMU**: Connected on mux CH5 (SD5→SDA, SC5→SCL) with **5.1kΩ** sub-bus pull-ups — **not responding** (depends on mux)
+- **TMAG5273 Hall sensors**: Not connected (sensors not yet arrived, using simulation data)
+- **BNO085 INT**: Connected to GPIO21
+
+### Problems Fixed (5 total)
+
+| # | Problem | Fix |
+|---|---------|-----|
+| 1 | Permission denied on `/dev/ttyACM0` | Installed udev rules (`/etc/udev/rules.d/99-platformio-udev.rules`), added to `dialout` group |
+| 2 | ESP32-S3 USB CDC Serial not outputting after boot | Added `-DARDUINO_USB_CDC_ON_BOOT=1` to `platformio.ini` |
+| 3 | Core dump checksum error blocking flash write | Erased flash with `pio run -t erase` before re-upload |
+| 4 | I2C scanner hanging (ESP-IDF blocking on NACK) | Reduced scan to minimal address tests (0x70, 0x4A, 0x22) |
+| 5 | Build error: braces around scalar initializer for float | Removed `PROGMEM`, used double brace syntax `{{...}, ...}` for GestureSignature array |
+
+### Hardware Configuration Update (2026-05-21)
+
+- **Pull-ups changed**: Main bus 5.1kΩ → **2kΩ** (closer to SOP 2.2kΩ spec, faster rise time at 400kHz)
+- **Channel fix**: Firmware `MuxChannels::BNO085_IMU` changed from 7 → **5** to match hardware wiring (SD5/SC5)
+- **Ch5 sub-bus pull-ups**: Installed **5.1kΩ** on SD5/SC5→3.3V for GY-BNO085
+- **Hardware clarification**: Using **PCA9548A** (NXP, register-compatible with TCA9548A) and **GY-BNO085** (Adafruit breakout, likely has onboard pull-ups)
+- **Ch0-4 sub-bus pull-ups**: Not installed (TMAG5273s not arrived). Main bus 2kΩ passes through PCA9548A internal switches — sufficient for testing.
+
+### Simulation Mode Implementation
+
+SensorManager now falls back to synthetic data generation when TCA9548A is not detected:
+
+- **20 gesture classes** with distinct signatures (open hand, fist, thumb up, OK sign, peace, index point, etc.)
+- Hall sensors: 0.1 (uncurled) / 0.9 (curled) + ±0.05 noise
+- Euler angles: 0° to ±45° + ±2.0° noise
+- Gyro: 0 deg/s (static gestures)
+- Kalman filtering applied to synthetic data (validates signal processing pipeline)
+- Auto-cycles gesture every 3 seconds (300 frames @ 100Hz)
+- CSV output unchanged — compatible with Edge Impulse data forwarder
+- 2-second calibration (FeatureNormalizer) then normalization to [0, 1]
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `platformio.ini` | Added `-DARDUINO_USB_CDC_ON_BOOT=1` |
+| `lib/Sensors/SensorManager.h` | Added simulation mode, 20 gesture signatures, `readSimulated()` method |
+| `/etc/udev/rules.d/99-platformio-udev.rules` | Created — permanent serial port access |
+| `docs/HARDWARE_WIRING_DEBUG_GUIDE_DM40B.md` | Created — DM40B multimeter wiring verification guide |
+| `docs/SESSION_SUMMARY_2026-05-20_HARDWARE_DEBUG_SIMULATION.md` | Created — full session summary |
+
+### Hardware Issue — UNRESOLVED
+
+I2C devices (TCA9548A at 0x70, BNO085 at 0x4A) return NACK. Suspected causes:
+- Devices may not be powered (no LEDs visible)
+- Wiring not connected properly
+- ~~5.1kΩ pull-ups~~ → Fixed: now 2kΩ (appropriate for 400kHz Fast Mode at 3.3V)
+- ~~Channel mismatch (code=7, hardware=5)~~ → Fixed: code changed to channel 5
+
+**Next action**: Follow DM40B multimeter wiring debug guide to verify physical connections
+
+---
+
 ## Active Work
 
-**Next**: Phase 3 — L1 Edge Inference (TinyML / TFLite Micro)
+**Current**: Phase 3 — L1 Edge Inference (Edge Impulse MVP Path A)
+
+Simulation mode is operational. Can proceed with Edge Impulse data collection using synthetic data while hardware debugging continues in parallel.
 
 ### Priority: Path A — Edge Impulse MVP (快速验证)
 
 Per SOP §6.1, ESP32 CSV output already compatible with `edge-impulse-data-forwarder`. Steps:
 
-1. Install edge-impulse-cli: `npm install -g edge-impulse-cli`
-2. Start data forwarder: `edge-impulse-data-forwarder`
-3. Collect labeled gesture data in Edge Impulse Studio
-4. Train 1D-CNN classifier (200 epochs, lr=0.001)
-5. Export as Arduino Library → integrate via PlatformIO `lib_deps`
+1. ✅ Install edge-impulse-cli: `npm install -g edge-impulse-cli`
+2. ✅ Firmware outputs CSV in simulation mode (20 gesture classes)
+3. **→ NEXT**: Start data forwarder: `edge-impulse-data-forwarder --baud-rate 115200 --frequency 100`
+4. Collect labeled gesture data in Edge Impulse Studio (30-60 samples per gesture)
+5. Train 1D-CNN classifier (200 epochs, lr=0.001)
+6. Export as Arduino Library → integrate via PlatformIO `lib_deps`
 
-**Target**: 2-3 days to MVP verification
+**Target**: 2-3 days to MVP verification (simulation data available immediately)
 
 Path B (PyTorch → TFLite INT8) deferred to Phase 3.5 Benchmark.
+
+### Parallel Work Tracks
+
+| Track | Status | Blocking? |
+|-------|--------|-----------|
+| Edge Impulse data collection (simulation) | Ready to start | **No** — synthetic data available |
+| Hardware verification (DM40B multimeter) | User action needed | **No** — simulation mode unblocks firmware |
+| TMAG5273 sensor installation | Awaiting delivery | **No** — reserved in simulation mode |
 
 ### Phase Status Summary
 
@@ -131,7 +205,7 @@ Path B (PyTorch → TFLite INT8) deferred to Phase 3.5 Benchmark.
 | P0 | Project init | Done |
 | P1 | HAL & drivers | Done |
 | P2 | Signal processing | Done |
-| P3 | L1 Edge Inference | **← NEXT** |
+| P3 | L1 Edge Inference — Simulation mode | **← ACTIVE** |
 | P3.5 | Model Benchmark | Pending |
 | P4 | Communication (BLE/UDP/Protobuf) | Scaffold exists |
 | P5 | Python Relay + L2 ST-GCN | Scaffold exists |
