@@ -2,15 +2,15 @@
 """
 glove_relay.src.protobuf_parser — Parse GloveData Protobuf messages.
 
-The ESP32 firmware serialises sensor readings using ``glove_data.proto``.
-This module converts raw bytes into a plain ``dict`` suitable for JSON
-serialisation over WebSocket.
+The ESP32 firmware serialises sensor readings using ``glove_data.proto``
+(package ``data_glove``).  This module converts raw bytes into a plain
+``dict`` suitable for JSON serialisation over WebSocket.
 
 .. note::
-    The compiled ``_pb2`` module is expected at ``proto/glove_data_pb2.py``.
-    Generate it with::
+    The compiled ``_pb2`` module lives at ``proto/glove_data_pb2.py``.
+    Regenerate with::
 
-        protoc --python_out=proto --proto_path=proto proto/glove_data.proto
+        python -m grpc_tools.protoc -Iproto --python_out=proto proto/glove_data.proto
 """
 
 from __future__ import annotations
@@ -22,9 +22,7 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
-# Attempt to import the generated protobuf module.  If it is not yet compiled
-# (e.g. during first-time setup) we fall back to a lightweight manual parser
-# that can decode a subset of well-known fields.
+# Attempt to import the generated protobuf module.
 # ---------------------------------------------------------------------------
 try:
     from proto import glove_data_pb2  # type: ignore[import-untyped]
@@ -34,7 +32,7 @@ except ImportError:
     _HAS_PROTOBUF = False
     logger.warning(
         "proto/glove_data_pb2.py not found — using fallback parser.  "
-        "Run `protoc --python_out=proto proto/glove_data.proto` for full support."
+        "Regenerate with: python -m grpc_tools.protoc -Iproto --python_out=proto proto/glove_data.proto"
     )
 
 
@@ -50,12 +48,16 @@ def parse_glove_data(data: bytes) -> dict[str, Any]:
     Returns
     -------
     dict
-        A JSON-serialisable dictionary with the following top-level keys:
+        Keys:
 
-        * ``timestamp`` (*float*) — UTC epoch seconds from the ESP32.
-        * ``hall`` (*list[float]*) — 15 hall-effect / flex sensor readings.
-        * ``imu`` (*list[float]*) — 6 IMU readings (accel_x/y/z, gyro_x/y/z).
-        * ``seq_num`` (*int*) — monotonically increasing sequence number.
+        * ``timestamp`` (*int*) — microsecond timestamp from ESP32.
+        * ``hall`` (*list[float]*) — 15 hall sensor values (5 × 3 axes).
+        * ``imu`` (*list[float]*) — 6 IMU values (3 euler + 3 gyro).
+        * ``flex`` (*list[float]*) — 5 flex sensor values (placeholder).
+        * ``l1_gesture_id`` (*int*) — on-device gesture prediction.
+        * ``l1_confidence`` (*float*) — prediction confidence [0, 1].
+        * ``l2_requested`` (*bool*) — whether L2 inference is needed.
+        * ``status`` (*str*) — system status string.
 
     Raises
     ------
@@ -78,69 +80,105 @@ def _parse_with_pb2(data: bytes) -> dict[str, Any]:
     except Exception as exc:
         raise ValueError(f"Protobuf decode error: {exc}") from exc
 
-    result: dict[str, Any] = {
+    return {
         "timestamp": msg.timestamp,
-        "seq_num": msg.seq_num,
-        "hall": list(msg.hall_sensor),
-        "imu": list(msg.imu_data),
+        "hall": list(msg.hall_features),
+        "imu": list(msg.imu_features),
+        "flex": list(msg.flex_features),
+        "l1_gesture_id": msg.l1_gesture_id,
+        "l1_confidence": msg.l1_confidence,
+        "l2_requested": msg.l2_requested,
+        "status": msg.status,
     }
-
-    # Optional quaternion field (if present in proto)
-    if hasattr(msg, "quaternion") and msg.quaternion:
-        result["quaternion"] = list(msg.quaternion)
-
-    return result
 
 
 # ---------------------------------------------------------------------------
-# Minimal fallback parser (works with the V3 firmware wire format)
+# Minimal fallback parser (binary struct layout matching the protobuf wire)
 # ---------------------------------------------------------------------------
 def _parse_fallback(data: bytes) -> dict[str, Any]:
     """
-    Best-effort parser that can decode a flat binary payload.
+    Best-effort binary parser when protobuf is unavailable.
 
-    Expected layout (V3 firmware, 115 bytes):
-        [timestamp: 8B float64]
-        [seq_num:   4B uint32 ]
-        [hall:     15B × 2B uint16 LE]
-        [imu:       6B × 4B float32 LE]
+    Expected layout (V3 firmware):
+        [timestamp:     4B uint32 LE]
+        [hall_features: 15 × 4B float32 LE]
+        [imu_features:   6 × 4B float32 LE]
+        [flex_features:  5 × 4B float32 LE]
+        [l1_gesture_id: 4B uint32 LE]
+        [l1_confidence: 4B float32 LE]
+        [l2_requested:  1B bool]
+        [status_len:    4B uint32 LE]
+        [status:        N bytes UTF-8]
 
-    Total: 8 + 4 + 30 + 24 = 66 bytes.  Older firmware versions may have
-    different layouts; this function is a safety net only.
+    This is a safety net only — prefer protobuf decoding.
     """
     import struct
     import time
 
-    if len(data) < 66:
-        raise ValueError(f"Fallback parser: expected ≥66 bytes, got {len(data)}")
+    min_size = 4 + 15 * 4 + 6 * 4 + 5 * 4 + 4 + 4 + 1 + 4
+    if len(data) < min_size:
+        raise ValueError(f"Fallback parser: expected ≥{min_size} bytes, got {len(data)}")
 
     offset = 0
 
-    timestamp = struct.unpack_from("<d", data, offset)[0]
-    offset += 8
-
-    seq_num = struct.unpack_from("<I", data, offset)[0]
+    timestamp = struct.unpack_from("<I", data, offset)[0]
     offset += 4
 
-    hall_values: list[float] = []
-    for _ in range(15):
-        val = struct.unpack_from("<H", data, offset)[0]
-        hall_values.append(float(val))
-        offset += 2
+    hall = list(struct.unpack_from("<15f", data, offset))
+    offset += 15 * 4
 
-    imu_values: list[float] = []
-    for _ in range(6):
-        val = struct.unpack_from("<f", data, offset)[0]
-        imu_values.append(float(val))
-        offset += 4
+    imu = list(struct.unpack_from("<6f", data, offset))
+    offset += 6 * 4
 
-    # Sanity check — if timestamp is 0 use current time
-    if timestamp == 0.0:
-        timestamp = time.time()
+    flex = list(struct.unpack_from("<5f", data, offset))
+    offset += 5 * 4
+
+    l1_gesture_id = struct.unpack_from("<I", data, offset)[0]
+    offset += 4
+
+    l1_confidence = struct.unpack_from("<f", data, offset)[0]
+    offset += 4
+
+    l2_requested = bool(data[offset])
+    offset += 1
+
+    status_len = struct.unpack_from("<I", data, offset)[0]
+    offset += 4
+    status = data[offset : offset + status_len].decode("utf-8", errors="replace")
+
+    if timestamp == 0:
+        timestamp = int(time.time() * 1_000_000)
 
     return {
         "timestamp": timestamp,
-        "seq_num": seq_num,
-        "hall": hall_values,
-        "imu": imu_values,
+        "hall": hall,
+        "imu": imu,
+        "flex": flex,
+        "l1_gesture_id": l1_gesture_id,
+        "l1_confidence": l1_confidence,
+        "l2_requested": l2_requested,
+        "status": status,
+    }
+
+
+def build_glove_data_dict(
+    timestamp: int = 0,
+    hall: list[float] | None = None,
+    imu: list[float] | None = None,
+    flex: list[float] | None = None,
+    l1_gesture_id: int = 0,
+    l1_confidence: float = 0.0,
+    l2_requested: bool = False,
+    status: str = "IDLE",
+) -> dict[str, Any]:
+    """Build a canonical GloveData dict (for testing / simulation)."""
+    return {
+        "timestamp": timestamp,
+        "hall": hall if hall is not None else [0.0] * 15,
+        "imu": imu if imu is not None else [0.0] * 6,
+        "flex": flex if flex is not None else [0.0] * 5,
+        "l1_gesture_id": l1_gesture_id,
+        "l1_confidence": l1_confidence,
+        "l2_requested": l2_requested,
+        "status": status,
     }

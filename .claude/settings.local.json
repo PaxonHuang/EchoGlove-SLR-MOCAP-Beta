@@ -29,7 +29,9 @@
       "Bash(groups *)",
       "Bash(lsblk *)",
       "Bash(sudo -S *)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(ln -s tests test)",
+      "Bash(protoc --version)"
     ]
   }
 }

@@ -80,7 +80,9 @@
 // #include "lib/Comms/UDPTransmitter.h"
 
 // ---- Model Libraries ----
-// #include "lib/Models/ModelRegistry.h"
+#include "ModelRegistry.h"
+#include "InferenceTrigger.h"
+#include "InferencePipeline.h"
 
 // =============================================================================
 // Global Objects
@@ -105,7 +107,10 @@ static FeatureNormalizer g_normalizer;
 // static UDPTransmitter g_udp_transmitter;
 
 /// Model registry for L1 inference + hot-switching
-// static ModelRegistry& g_model_registry = ModelRegistry::instance();
+static ModelRegistry& g_model_registry = ModelRegistry::instance();
+
+/// Inference trigger (confidence gating + debouncing)
+static InferenceTrigger g_inference_trigger;
 
 // =============================================================================
 // FreeRTOS Queues
@@ -338,18 +343,35 @@ void Task_SensorRead(void* pvParameters) {
 }
 
 // =============================================================================
-// Task_Inference — Placeholder (Phase 3 will implement L1 inference)
+// Task_Inference — L1 Edge Inference (Phase 3)
 // =============================================================================
 
 void Task_Inference(void* pvParameters) {
-    Serial.println("[Task_Inference] Started on Core 0 (placeholder)");
+    Serial.println("[Task_Inference] Started on Core 0");
 
     while (true) {
-        // Wait for SlidingWindow to be full before attempting inference
-        if (g_sliding_window.isFull()) {
-            // Phase 3: Will run TFLite Micro inference here
-            // const float* inference_input = g_sliding_window.getBuffer();
-            // g_model_registry.infer(inference_input, ...);
+        BaseModel* active_model = g_model_registry.getActiveModel();
+        if (active_model && g_sliding_window.isFull()) {
+            GestureResult result;
+            result.zero();
+
+            uint32_t now_us = (uint32_t)esp_timer_get_time();
+            bool confirmed = runInferencePipeline(
+                g_sliding_window, *active_model,
+                g_inference_trigger, result, now_us);
+
+            if (confirmed) {
+                InferenceResult ir;
+                ir.gesture = result;
+                ir.timestamp_us = now_us;
+                strncpy(ir.model_name, active_model->name(), sizeof(ir.model_name) - 1);
+
+                xQueueSend(g_inference_queue, &ir, 0);
+
+                Serial.printf("[Inference] Gesture %d conf=%.2f (%s)\n",
+                              result.gesture_id, result.confidence,
+                              active_model->name());
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(33));  // ~30 Hz

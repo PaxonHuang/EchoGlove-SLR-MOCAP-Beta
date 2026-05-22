@@ -155,7 +155,6 @@ class UDPServer:
         ):
             self._frame_buffer.append(parsed)
             self._debounce_counter = 0
-            self._last_gesture_time = now
 
             if len(self._frame_buffer) >= self._window_size:
                 l2_result = self._run_l2()
@@ -163,6 +162,7 @@ class UDPServer:
                 result["l2_confidence"] = l2_result[1]
                 result["status"] = "l2_ok"
                 self._frame_buffer.clear()
+                self._last_gesture_time = now
         else:
             self._debounce_counter += 1
 

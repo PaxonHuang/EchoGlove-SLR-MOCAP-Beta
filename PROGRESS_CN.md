@@ -1,10 +1,6 @@
-以下是 [PROGRESS.md](file:///home/paxon/CodingProjects/EchoGloveProjects/EchoGlove-SLR-MOCAP-Alpha/PROGRESS.md) 和 [platformio.ini](file:///home/paxon/CodingProjects/EchoGloveProjects/EchoGlove-SLR-MOCAP-Alpha/platformio.ini) 文件的中文翻译。
+# PROGRESS_CN.md — 跨会话状态追踪器
 
----
-
-# PROGRESS.md — 跨会话状态追踪器
-
-**最后更新**: 2026-05-15
+**最后更新**: 2026-05-22
 
 ---
 
@@ -102,79 +98,216 @@ Serial CSV output              → Edge Impulse 兼容格式输出
 
 ### 创建的单元测试
 
-| 测试文件                                                                                                                                                     | 覆盖范围                                                                          |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| [tests/test_tca9548a.cpp](file:///home/paxon/CodingProjects/EchoGloveProjects/EchoGlove-SLR-MOCAP-Alpha/glove_firmware/tests/test_tca9548a.cpp)                 | TCA9548A 通道选择, disableAll, 探测                                               |
-| [tests/test_tmag5273.cpp](file:///home/paxon/CodingProjects/EchoGloveProjects/EchoGlove-SLR-MOCAP-Alpha/glove_firmware/tests/test_tmag5273.cpp)                 | TMAG5273 初始化, readXYZ, 空多路复用器处理                                        |
-| [tests/test_euler_conversion.cpp](file:///home/paxon/CodingProjects/EchoGloveProjects/EchoGlove-SLR-MOCAP-Alpha/glove_firmware/tests/test_euler_conversion.cpp) | 四元数转欧拉角 (5 种情况), SlidingWindow (5 种情况), FeatureNormalizer (5 种情况) |
+| 测试文件                                                                                                                                                     | 覆盖范围                                                                          | 平台   |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- | ------ |
+| [test/test_tca9548a/test_tca9548a.cpp](file:///home/paxon/CodingProjects/EchoGloveProjects/EchoGlove-SLR-MOCAP-Alpha/glove_firmware/test/test_tca9548a/test_tca9548a.cpp)                 | TCA9548A 通道选择, disableAll, 探测                                               | ESP32  |
+| [test/test_tmag5273/test_tmag5273.cpp](file:///home/paxon/CodingProjects/EchoGloveProjects/EchoGlove-SLR-MOCAP-Alpha/glove_firmware/test/test_tmag5273/test_tmag5273.cpp)                 | TMAG5273 初始化, readXYZ, 空多路复用器处理                                        | ESP32  |
+| [test/test_euler_conversion/test_euler_conversion.cpp](file:///home/paxon/CodingProjects/EchoGloveProjects/EchoGlove-SLR-MOCAP-Alpha/glove_firmware/test/test_euler_conversion/test_euler_conversion.cpp) | 四元数转欧拉角 (5 种情况), SlidingWindow (5 种情况), FeatureNormalizer (5 种情况) | 原生   |
+| [test/test_inference_trigger/test_inference_trigger.cpp](file:///home/paxon/CodingProjects/EchoGloveProjects/EchoGlove-SLR-MOCAP-Alpha/glove_firmware/test/test_inference_trigger/test_inference_trigger.cpp) | InferenceTrigger: 置信度门控, 防抖动, 静默期 (11 项测试)                          | 原生   |
+| [test/test_mock_model/test_mock_model.cpp](file:///home/paxon/CodingProjects/EchoGloveProjects/EchoGlove-SLR-MOCAP-Alpha/glove_firmware/test/test_mock_model/test_mock_model.cpp)     | MockModel: 初始化, 预处理, 推理, 后处理, l2_requested (10 项测试)          | 原生   |
+| [test/test_inference_pipeline/test_inference_pipeline.cpp](file:///home/paxon/CodingProjects/EchoGloveProjects/EchoGlove-SLR-MOCAP-Alpha/glove_firmware/test/test_inference_pipeline/test_inference_pipeline.cpp) | Pipeline: 窗口→模型→触发器集成 (6 项测试)               | 原生   |
+
+**原生测试总数**: 42 通过 / 2 错误（依赖硬件）/ 44 总计
+
+---
+
+## 硬件调试与仿真模式 (2026-05-20) — 进行中
+
+### 背景
+
+ESP32-S3 通过 USB CDC 连接到 Ubuntu (`/dev/ttyACM0`)。硬件部分接线：
+- **PCA9548A 多路复用器** (兼容TCA9548A): 连接在 GPIO8/9，使用 **2kΩ** 上拉电阻 — **I2C 无响应** (err=5 NACK)
+- **GY-BNO085 IMU**: 连接在多路复用器 CH5 (SD5→SDA, SC5→SCL)，使用 **5.1kΩ** 子总线上拉电阻 — **无响应** (依赖多路复用器)
+- **TMAG5273 霍尔传感器**: 未连接 (传感器尚未到货，使用仿真数据)
+- **BNO085 INT**: 连接到 GPIO21
+
+### 已修复的问题 (共 5 个)
+
+| # | 问题 | 修复方案 |
+|---|------|---------|
+| 1 | `/dev/ttyACM0` 权限拒绝 | 安装 udev 规则 (`/etc/udev/rules.d/99-platformio-udev.rules`)，添加到 `dialout` 组 |
+| 2 | ESP32-S3 USB CDC 串口启动后无输出 | 在 `platformio.ini` 中添加 `-DARDUINO_USB_CDC_ON_BOOT=1` |
+| 3 | 核心转储校验和错误阻止闪存写入 | 上传前使用 `pio run -t erase` 擦除闪存 |
+| 4 | I2C 扫描器挂起 (ESP-IDF 在 NACK 时阻塞) | 减少扫描范围至最小地址测试 (0x70, 0x4A, 0x22) |
+| 5 | 编译错误：浮点类型标量初始化器周围的花括号 | 移除 `PROGMEM`，对 GestureSignature 数组使用双层花括号语法 `{{...}, ...}` |
+
+### 硬件配置更新 (2026-05-21)
+
+- **上拉电阻变更**: 主总线 5.1kΩ → **2kΩ** (更接近 SOP 2.2kΩ 规范，400kHz 时上升时间更快)
+- **通道修复**: 固件 `MuxChannels::BNO085_IMU` 从 7 更改为 **5** 以匹配硬件接线 (SD5/SC5)
+- **Ch5 子总线上拉电阻**: 在 SD5/SC5→3.3V 安装 **5.1kΩ** 用于 GY-BNO085
+- **硬件说明**: 使用 **PCA9548A** (NXP，与 TCA9548A 寄存器兼容) 和 **GY-BNO085** (Adafruit  breakout，可能有板载上拉电阻)
+- **Ch0-4 子总线上拉电阻**: 未安装 (TMAG5273 尚未到货)。主总线 2kΩ 通过 PCA9548A 内部开关传递 — 测试足够。
+
+### 仿真模式实现
+
+当未检测到 TCA9548A 时，SensorManager 回退到合成数据生成：
+
+- **20 个手势类别**，具有不同的特征（张开手掌、握拳、竖大拇指、OK 手势、和平手势、食指指点等）
+- 霍尔传感器：0.1（未弯曲）/ 0.9（弯曲）+ ±0.05 噪声
+- 欧拉角：0° 到 ±45° + ±2.0° 噪声
+- 陀螺仪：0 度/秒（静态手势）
+- 对合成数据应用卡尔曼滤波（验证信号处理管道）
+- 每 3 秒自动切换手势（300 帧 @ 100Hz）
+- CSV 输出不变 — 兼容 Edge Impulse 数据转发器
+- 2 秒校准 (FeatureNormalizer) 然后归一化到 [0, 1]
+
+### 已修改的文件
+
+| 文件 | 变更 |
+|------|------|
+| `platformio.ini` | 添加 `-DARDUINO_USB_CDC_ON_BOOT=1` |
+| `lib/Sensors/SensorManager.h` | 添加仿真模式、20 个手势签名、`readSimulated()` 方法 |
+| `/etc/udev/rules.d/99-platformio-udev.rules` | 已创建 — 永久串口访问 |
+| `docs/HARDWARE_WIRING_DEBUG_GUIDE_DM40B.md` | 已创建 — DM40B 万用表接线验证指南 |
+| `docs/SESSION_SUMMARY_2026-05-20_HARDWARE_DEBUG_SIMULATION.md` | 已创建 — 完整会议总结 |
+
+### 硬件问题 — 未解决
+
+I2C 设备（0x70 的 TCA9548A，0x4A 的 BNO085）返回 NACK。怀疑原因：
+- 设备可能未通电（无 LED 可见）
+- 接线可能未正确连接
+- ~~5.1kΩ 上拉电阻~~ → 已修复：现为 2kΩ（适用于 400kHz Fast Mode，3.3V）
+- ~~通道不匹配（代码=7，硬件=5）~~ → 已修复：代码更改为通道 5
+
+**下一步行动**: 遵循 DM40B 万用表接线调试指南验证物理连接
 
 ---
 
 ## 当前工作
 
-**下一步**: 第三阶段 — L1 边缘推理 (TinyML / TFLite Micro)
+**当前**: 第三阶段 — L1 边缘推理 (Edge Impulse MVP 路径 A)
+
+仿真模式可运行。可以在硬件调试继续并行进行的同时，使用合成数据进行 Edge Impulse 数据收集。
 
 ### 优先级: 路径 A — Edge Impulse MVP (快速验证)
 
 根据 SOP §6.1，ESP32 CSV 输出已兼容 `edge-impulse-data-forwarder`。步骤如下：
 
-1. 安装 edge-impulse-cli: `npm install -g edge-impulse-cli`
-2. 启动数据转发器: `edge-impulse-data-forwarder`
-3. 在 Edge Impulse Studio 中收集带标签的手势数据
-4. 训练 1D-CNN 分类器 (200 epochs, lr=0.001)
-5. 导出为 Arduino 库 → 通过 PlatformIO `lib_deps` 集成
+1. ✅ 安装 edge-impulse-cli: `npm install -g edge-impulse-cli`
+2. ✅ 固件在仿真模式下输出 CSV（20 个手势类别）
+3. **→ 下一步**: 启动数据转发器: `edge-impulse-data-forwarder --baud-rate 115200 --frequency 100`
+4. 在 Edge Impulse Studio 中收集带标签的手势数据（每个手势 30-60 个样本）
+5. 训练 1D-CNN 分类器（200 epochs, lr=0.001）
+6. 导出为 Arduino 库 → 通过 PlatformIO `lib_deps` 集成
 
-**目标**: 2-3 天内完成 MVP 验证
+**目标**: 2-3 天内完成 MVP 验证（立即可用仿真数据）
 
 路径 B (PyTorch → TFLite INT8) 推迟至 Phase 3.5 基准测试阶段。
 
+### 并行工作轨道
+
+| 轨道 | 状态 | 阻塞? |
+|-------|--------|-----------|
+| Edge Impulse 数据收集（仿真） | 准备开始 | **否** — 合成数据可用 |
+| 硬件验证（DM40B 万用表） | 需要用户操作 | **否** — 仿真模式解除固件阻塞 |
+| TMAG5273 传感器安装 | 等待到货 | **否** — 在仿真模式下保留 |
+
 ### 阶段状态汇总
 
-| 阶段 | 名称                     | 状态                |
-| ---- | ------------------------ | ------------------- |
-| P0   | 项目初始化               | 已完成              |
-| P1   | HAL & 驱动               | 已完成              |
-| P2   | 信号处理                 | 已完成              |
-| P3   | L1 边缘推理              | **← 下一步** |
-| P3.5 | 模型基准测试             | 待定                |
-| P4   | 通信 (BLE/UDP/Protobuf)  | 已有脚手架          |
-| P5   | Python Relay + L2 ST-GCN | 已有脚手架          |
-| P6   | Web 渲染 / Unity Pro     | 已有脚手架          |
-| P7   | 集成测试                 | 待定                |
+| 阶段 | 名称 | 状态 |
+|-------|------|--------|
+| P0 | 项目初始化 | 已完成 |
+| P1 | HAL & 驱动 | 已完成 |
+| P2 | 信号处理 | 已完成 |
+| P3 | L1 边缘推理 — 管道 + TDD | 已完成（42/44 原生测试） |
+| P3.5 | 模型基准测试 | 待定 |
+| P4 | 通信 (BLE/UDP/Protobuf) | 已完成（84/84 中继测试） |
+| P5 | Python Relay + L2 ST-GCN | **← 活跃**（84/84 测试，ST-GCN 已验证） |
+| P6 | Web 渲染 / Unity Pro | 已有脚手架 |
+| P7 | 集成测试 | 待定 |
 
 ---
 
-# platformio.ini 翻译
+## 第三阶段: L1 边缘推理 — TDD 完成 (2026-05-22)
 
-```ini
-; PlatformIO 项目配置文件
-;
-;   构建选项: 构建标志, 源文件过滤
-;   上传选项: 自定义上传端口, 速度及额外标志
-;   库选项: 依赖项, 额外库存储
-;   高级选项: 额外脚本
-;
-; 请访问文档了解其他选项和示例
-; https://docs.platformio.org/page/projectconf.html
+### TDD 红-绿-重构总结
 
-[env:esp32-s3-devkitc-1-n8r8]
-platform = espressif32 @ ^6.5.0
-board = esp32-s3-devkitc-1
-framework = arduino
-board_build.psram = enable
-board_build.arduino.memory_type = qio_opi
-monitor_speed = 115200
-build_flags = 
-	-DBOARD_HAS_PSRAM
-	-DCORE_DEBUG_LEVEL=3
-	-std=gnu++17
-lib_deps = 
-	nanopb/Nanopb @ ^0.4.7
-	adafruit/Adafruit BNO08x @ ^1.2.5
-	https://github.com/sparkfun/SparkFun_TMAG5273_Arduino_Library.git
-	adafruit/Adafruit BusIO @ ^1.14.1
-	h2zero/NimBLE-Arduino @ ^1.4.1
-	links2004/WebSockets @ ^2.4.1
-	Wire
-	7semi-solutions/7Semi_TMAG5273@^1.0.0
-```
+**InferenceTrigger** (交付物 E — SOP §6.6):
+- 红: 9 失败, 2 通过（存根返回默认值）
+- 绿: 11/11 通过 — 置信度阈值 0.85，5 帧防抖动，100ms 静默期
+- 实现: `lib/Inference/InferenceTrigger.h`（97 行，仅头文件）
+
+**MockModel** (管道测试启用器):
+- 红: 9 失败, 1 通过（存根返回默认值）
+- 绿: 10/10 通过 — 可配置输出，softmax/argmax 后处理，l2_requested 频段
+- 实现: `lib/Models/MockModel.h`（仅头文件，无 Arduino/TFLite 依赖）
+
+**InferencePipeline** (管道粘合代码):
+- 红: 3 失败, 3 通过（存根返回 false）
+- 绿: 6/6 通过 — SlidingWindow → ModelRegistry → InferenceTrigger 流程
+- 实现: `lib/Inference/InferencePipeline.h`（仅头文件）
+
+**Task_Inference 接线**:
+- ModelRegistry + InferenceTrigger 全局变量在 main.cpp 中实例化
+- Task_Inference 现在在活动模型上调用 `runInferencePipeline()`
+- 确认手势作为 `InferenceResult` 推送到 `g_inference_queue`
+- ESP32 构建：两个环境均通过（常规 + 调试）
+
+### 基础设施修复
+- `lib/data_structures.h` → 重定向到 `include/data_structures.h`（单一事实来源）
+- `include/data_structures.h` → `#ifdef UNIT_TEST` 存根（Serial, ps_malloc, PROGMEM）
+- `platformio.ini` → 添加 `[env:native]` 用于快速 TDD 循环（~1秒 vs ~100秒 ESP32）
+- 测试目录重命名为 `test_*` 前缀（PlatformIO 发现要求）
+- 所有测试文件中的 Arduino `setup()/loop()` 存根
+- TFLiteModel.h → 为新 API 修复 `MicroInterpreter` 构造函数（ErrorReporter 参数）
+
+### 第三阶段交付物状态
+
+| 交付物 | 代码 | 测试 | 备注 |
+|-------------|------|--------|-------|
+| A. Edge Impulse MVP | 推迟 | — | 需要数据收集 |
+| B. 1D-CNN+Attention 训练 | 已编写 | 否 | 需要训练数据 |
+| C. MS-TCN 训练 | 已编写 | 否 | 需要训练数据 |
+| D. BaseModel + Registry + 热切换 | 已完成 | 框架 | `BaseModel.h`, `ModelRegistry.h` |
+| E. 推理触发器 | 已完成 | **11/11** | TDD 完成 |
+| F. TFLite Micro 集成 | 已完成 | 构建通过 | 需要 `model_data.h`（训练好的模型） |
+
+### 阻塞依赖
+
+**训练数据** 阻塞：交付物 A/B/C/F 完整验证，第三阶段 3.5 基准测试。
+仿真模式提供合成的 20 手势数据用于管道测试。
+
+---
+
+## 第五阶段: Python Relay — TDD 基础设施 (2026-05-22)
+
+### Protobuf 架构同步
+
+固件 `.proto` 确立为单一事实来源。中继的 `glove_data.proto` 被固件的规范版本覆盖（包 `data_glove`，`hall_features` float，`l1_gesture_id`，`l1_confidence`，`l2_requested`，`status` string）。通过 `grpcio-tools` 重新生成 Python `glove_data_pb2.py`。
+
+### TDD 红-绿-重构总结
+
+**protobuf_parser** (19 项测试):
+- 绿: 19/19 — 解析有效 protobuf，无效数据处理，往返测试，`build_glove_data_dict` 辅助函数
+- Proto3 空字节行为：返回默认值（非错误）
+
+**UDPServer** (23 项测试):
+- 绿: 23/23 — 构造，数据报处理，L1→L2 路由，防抖动，静默期，缓冲区累积
+- Bug 修复：`_last_gesture_time` 在每个缓冲区追加时设置（过早阻塞静默期内的帧）。移至仅在 L2 实际触发后更新。这是 TDD 发现的真实 bug。
+
+**ST-GCN Model** (27 项测试):
+- 绿: 27/27 — 邻接矩阵，GraphConv，TemporalConv，STConvBlock，AttentionPooling，完整模型端到端
+- 已验证：输出形状，梯度流，预测 API，配置序列化
+
+**WebSocket ConnectionManager** (15 项测试):
+- 绿: 15/15 — 连接/断开生命周期，向所有/JSON/unicode 广播，移除死亡客户端，`close_all` 优雅关闭
+
+**完整中继测试套件**: 84/84 通过，用时 2.43 秒
+
+### 测试文件
+
+| 测试文件 | 测试数 | 覆盖范围 |
+|-----------|-------|----------|
+| `tests/test_protobuf_parser.py` | 19 | Protobuf 解码，无效数据，往返测试，字典构建器 |
+| `tests/test_udp_server.py` | 23 | 服务器初始化，数据报处理，L1→L2 路由，防抖动，静默期 |
+| `tests/test_stgcn_model.py` | 27 | 邻接矩阵，GraphConv，TemporalConv，STConvBlock，AttnPool，STGCNModel |
+| `tests/test_ws_server.py` | 15 | 连接生命周期，广播，清理 |
+
+### TDD 发现的 Bug
+
+**静默期门控 bug** (`udp_server.py:158`): `_last_gesture_time = now` 位于外部 `if` 块内（在通过防抖的每个低置信度帧上执行）。这导致静默期在**任何**缓冲区追加后阻塞所有后续帧 800ms，而不是仅在 L2 触发后。修复：将 `_last_gesture_time = now` 移至 `if len(buffer) >= window_size` 块内，此处 L2 实际触发。
+
+### 已安装的依赖
+
+`fastapi`, `websockets`, `pyyaml`, `numpy`, `protobuf`, `grpcio-tools`, `pytest`, `pytest-asyncio`, `torch` (CPU)

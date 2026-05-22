@@ -9,8 +9,14 @@
 
 #include <unity.h>
 #include <Wire.h>
-#include "lib/Sensors/TCA9548A.h"
-#include "lib/Sensors/TMG5273.h"
+#include <iostream>
+
+// Arduino framework requires setup/loop — stubs for test binary
+void setup() {}
+void loop() {}
+#include "data_structures.h"
+#include "TCA9548A.h"
+#include "TMG5273.h"
 
 // Test globals
 static TCA9548A* mux = nullptr;

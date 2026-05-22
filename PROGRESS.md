@@ -1,6 +1,6 @@
 # PROGRESS.md — Cross-Session State Tracker
 
-**Last updated**: 2026-05-21
+**Last updated**: 2026-05-22
 
 ---
 
@@ -98,11 +98,16 @@ Serial CSV output              → Edge Impulse compatible format
 
 ### Unit Tests Created
 
-| Test File                           | Coverage                                                                    |
-| ----------------------------------- | --------------------------------------------------------------------------- |
-| `tests/test_tca9548a.cpp`         | TCA9548A channel selection, disableAll, probe                               |
-| `tests/test_tmag5273.cpp`         | TMAG5273 begin, readXYZ, null mux handling                                  |
-| `tests/test_euler_conversion.cpp` | quat→Euler (5 cases), SlidingWindow (5 cases), FeatureNormalizer (5 cases) |
+| Test File                                        | Coverage                                                                    | Platform |
+| ------------------------------------------------ | --------------------------------------------------------------------------- | -------- |
+| `test/test_tca9548a/test_tca9548a.cpp`         | TCA9548A channel selection, disableAll, probe                               | ESP32    |
+| `test/test_tmag5273/test_tmag5273.cpp`         | TMAG5273 begin, readXYZ, null mux handling                                  | ESP32    |
+| `test/test_euler_conversion/test_euler_conversion.cpp` | quat→Euler (5), SlidingWindow (5), FeatureNormalizer (5)          | Native   |
+| `test/test_inference_trigger/test_inference_trigger.cpp` | InferenceTrigger: confidence gating, debouncing, silent period (11) | Native   |
+| `test/test_mock_model/test_mock_model.cpp`     | MockModel: init, preprocess, infer, postprocess, l2_requested (10)          | Native   |
+| `test/test_inference_pipeline/test_inference_pipeline.cpp` | Pipeline: window→model→trigger integration (6)               | Native   |
+
+**Native test count**: 42 pass / 2 errored (hardware-dependent) / 44 total
 
 ---
 
@@ -205,9 +210,104 @@ Path B (PyTorch → TFLite INT8) deferred to Phase 3.5 Benchmark.
 | P0 | Project init | Done |
 | P1 | HAL & drivers | Done |
 | P2 | Signal processing | Done |
-| P3 | L1 Edge Inference — Simulation mode | **← ACTIVE** |
+| P3 | L1 Edge Inference — Pipeline + TDD | Done (42/44 native tests) |
 | P3.5 | Model Benchmark | Pending |
-| P4 | Communication (BLE/UDP/Protobuf) | Scaffold exists |
-| P5 | Python Relay + L2 ST-GCN | Scaffold exists |
+| P4 | Communication (BLE/UDP/Protobuf) | Done (84/84 relay tests) |
+| P5 | Python Relay + L2 ST-GCN | **← ACTIVE** (84/84 tests, ST-GCN verified) |
 | P6 | Web rendering / Unity Pro | Scaffold exists |
 | P7 | Integration testing | Pending |
+
+---
+
+## Phase 3: L1 Edge Inference — TDD Completion (2026-05-22)
+
+### TDD Red-Green-Refactor Summary
+
+**InferenceTrigger** (Deliverable E — SOP §6.6):
+- RED: 9 fail, 2 pass (stub returns defaults)
+- GREEN: 11/11 pass — confidence threshold 0.85, 5-frame debounce, 100ms silent period
+- Implementation: `lib/Inference/InferenceTrigger.h` (97 lines, header-only)
+
+**MockModel** (pipeline testing enabler):
+- RED: 9 fail, 1 pass (stub returns defaults)
+- GREEN: 10/10 pass — configurable output, softmax/argmax postprocess, l2_requested band
+- Implementation: `lib/Models/MockModel.h` (header-only, no Arduino/TFLite dependency)
+
+**InferencePipeline** (pipeline glue):
+- RED: 3 fail, 3 pass (stub returns false)
+- GREEN: 6/6 pass — SlidingWindow → ModelRegistry → InferenceTrigger flow
+- Implementation: `lib/Inference/InferencePipeline.h` (header-only)
+
+**Task_Inference wiring**:
+- ModelRegistry + InferenceTrigger globals instantiated in main.cpp
+- Task_Inference now calls `runInferencePipeline()` on active model
+- Confirmed gestures pushed to `g_inference_queue` as `InferenceResult`
+- ESP32 build: both envs pass (regular + debug)
+
+### Infrastructure Fixes
+- `lib/data_structures.h` → redirect to `include/data_structures.h` (single source of truth)
+- `include/data_structures.h` → `#ifdef UNIT_TEST` stubs (Serial, ps_malloc, PROGMEM)
+- `platformio.ini` → added `[env:native]` for fast TDD cycles (~1s vs ~100s ESP32)
+- Test directories renamed `test_*` prefix (PlatformIO discovery requirement)
+- Arduino `setup()/loop()` stubs in all test files
+- TFLiteModel.h → fixed `MicroInterpreter` constructor for new API (ErrorReporter param)
+
+### Phase 3 Deliverable Status
+
+| Deliverable | Code | Tested | Notes |
+|-------------|------|--------|-------|
+| A. Edge Impulse MVP | Deferred | — | Needs data collection |
+| B. 1D-CNN+Attention training | Written | No | Needs training data |
+| C. MS-TCN training | Written | No | Needs training data |
+| D. BaseModel + Registry + Hot-Switch | Done | Framework | `BaseModel.h`, `ModelRegistry.h` |
+| E. Inference Trigger | Done | **11/11** | TDD complete |
+| F. TFLite Micro integration | Done | Build passes | Needs `model_data.h` (trained model) |
+
+### Blocking Dependency
+
+**Training data** blocks: Deliverables A/B/C/F full validation, Phase 3.5 benchmarks.
+Simulation mode provides synthetic 20-gesture data for pipeline testing.
+
+---
+
+## Phase 5: Python Relay — TDD Infrastructure (2026-05-22)
+
+### Protobuf Schema Sync
+
+Firmware `.proto` established as single source of truth. Relay's `glove_data.proto` overwritten with firmware's canonical version (package `data_glove`, `hall_features` float, `l1_gesture_id`, `l1_confidence`, `l2_requested`, `status` string). Python `glove_data_pb2.py` regenerated via `grpcio-tools`.
+
+### TDD Red-Green-Refactor Summary
+
+**protobuf_parser** (19 tests):
+- GREEN: 19/19 — parse valid protobuf, invalid data handling, round-trip, `build_glove_data_dict` helper
+- Proto3 empty-bytes behavior: returns defaults (not error)
+
+**UDPServer** (23 tests):
+- GREEN: 23/23 — construction, datagram handling, L1→L2 routing, debounce, silence period, buffer accumulation
+- Bug fix: `_last_gesture_time` was set on every buffer append (prematurely blocking frames within silence_ms). Moved to only update after L2 actually fires. This was a real bug found by TDD.
+
+**ST-GCN Model** (27 tests):
+- GREEN: 27/27 — adjacency matrix, GraphConv, TemporalConv, STConvBlock, AttentionPooling, full model end-to-end
+- Verified: output shapes, gradient flow, predict API, config serialization
+
+**WebSocket ConnectionManager** (15 tests):
+- GREEN: 15/15 — connect/disconnect lifecycle, broadcast to all/JSON/unicode, dead client removal, `close_all` graceful shutdown
+
+**Full relay test suite**: 84/84 pass in 2.43s
+
+### Test Files
+
+| Test File | Tests | Coverage |
+|-----------|-------|----------|
+| `tests/test_protobuf_parser.py` | 19 | Protobuf decode, invalid data, round-trip, dict builder |
+| `tests/test_udp_server.py` | 23 | Server init, datagram handling, L1→L2 routing, debounce, silence |
+| `tests/test_stgcn_model.py` | 27 | Adjacency, GraphConv, TemporalConv, STConvBlock, AttnPool, STGCNModel |
+| `tests/test_ws_server.py` | 15 | Connection lifecycle, broadcast, cleanup |
+
+### Bug Found by TDD
+
+**Silence period gating bug** (`udp_server.py:158`): `_last_gesture_time = now` was inside the outer `if` block (executed on every low-confidence frame that passes debounce). This caused the silence period to block ALL subsequent frames for 800ms after any buffer append, not just after L2 fires. Fix: moved `_last_gesture_time = now` inside the `if len(buffer) >= window_size` block where L2 actually triggers.
+
+### Dependencies Installed
+
+`fastapi`, `websockets`, `pyyaml`, `numpy`, `protobuf`, `grpcio-tools`, `pytest`, `pytest-asyncio`, `torch` (CPU)

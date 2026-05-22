@@ -35,6 +35,7 @@
 // ESP32-S3 optimized TFLite Micro headers
 #include <tensorflow/lite/micro/all_ops_resolver.h>
 #include <tensorflow/lite/micro/micro_interpreter.h>
+#include <tensorflow/lite/micro/micro_error_reporter.h>
 #include <tensorflow/lite/schema/schema_generated.h>
 
 #include "BaseModel.h"
@@ -147,7 +148,8 @@ public:
         // ---- Step 3: Build interpreter ----
         static tflite::AllOpsResolver resolver;
         _interpreter = new tflite::MicroInterpreter(_model, resolver,
-                                                     _tensor_arena, _arena_size);
+                                                     _tensor_arena, _arena_size,
+                                                     &_error_reporter);
 
         // ---- Step 4: Allocate tensors ----
         TfLiteStatus alloc_status = _interpreter->AllocateTensors();
@@ -395,6 +397,7 @@ private:
 
     ModelInfo               _info;
     tflite::MicroInterpreter* _interpreter;  ///< TFLite Micro interpreter
+    tflite::MicroErrorReporter _error_reporter;  ///< TFLite error reporter
     uint8_t*                _tensor_arena;  ///< PSRAM tensor arena
     const tflite::Model*    _model;         ///< TFLite flatbuffer model
     const uint8_t*          _model_data;    ///< Raw model binary pointer

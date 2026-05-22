@@ -10,10 +10,14 @@
 #include <cstring>
 #include <cmath>
 
+// Arduino framework requires setup/loop — stubs for test binary
+void setup() {}
+void loop() {}
+
 // Include project headers
 #include "data_structures.h"
-#include "lib/Filters/SlidingWindow.h"
-#include "lib/Filters/FeatureNormalizer.h"
+#include "SlidingWindow.h"
+#include "FeatureNormalizer.h"
 
 // =============================================================================
 // Quaternion → Euler Conversion Tests (pure math, no hardware needed)

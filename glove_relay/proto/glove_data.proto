@@ -1,38 +1,48 @@
 syntax = "proto3";
 
-package glove;
+/* =============================================================================
+ * EdgeAI Data Glove V3 — Protobuf Wire Schema (Nanopb)
+ * =============================================================================
+ * Defines the serialized packet sent over UDP and BLE.
+ *
+ * This is the SINGLE SOURCE OF TRUTH for the wire format.
+ * Firmware (Nanopb) and Relay (Python protobuf) both derive from this file.
+ *
+ * Design Notes:
+ *   - repeated fields use [packed=true] for space efficiency
+ *   - float arrays are used (not nested messages) for zero-copy with TFLite
+ *   - Status is a string for human readability
+ *   - timestamp is uint32 microseconds (wraps at ~4294 seconds ≈ 71 min)
+ * =============================================================================
+ */
 
-// GloveData — sensor payload sent from ESP32 to the relay server via UDP.
-//
-// Layout summary:
-//   15 hall-effect / flex sensors  (uint16, 0–4095)
-//    6 IMU channels               (float32: accel_x/y/z, gyro_x/y/z)
-//    4 quaternion channels (opt.) (float32: w/x/y/z)
-//    timestamp + sequence number
+package data_glove;
+
 message GloveData {
-  // Monotonically increasing sequence number (wraps at 2^32).
-  uint32 seq_num          = 1;
+    /// Monotonic timestamp in microseconds (mod 2^32)
+    uint32 timestamp        = 1;
 
-  // UTC epoch time in seconds (set by ESP32 NTP sync).
-  double timestamp        = 2;
+    /// 3D Hall sensor features: 15 floats (5 sensors × 3 axes XYZ)
+    /// Order: [thumb_x, thumb_y, thumb_z, index_x, ..., pinky_z]
+    repeated float hall_features    = 2 [packed = true];
 
-  // 15 hall-effect / flex sensor ADC values.
-  // Indices 0–4: thumb, 5–8: index, 9–12: middle, 13–16: ring, 17–20: pinky
-  // (mapped to 15 channels in firmware).
-  repeated uint32 hall_sensor = 3;  // max 15 elements
+    /// IMU features: 6 floats (3 euler + 3 gyro)
+    /// Order: [roll, pitch, yaw, gyro_x, gyro_y, gyro_z]
+    repeated float imu_features     = 3 [packed = true];
 
-  // 6-axis IMU data: [accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z]
-  repeated float imu_data  = 4;  // max 6 elements
+    /// Flex sensor features: 5 floats (reserved for V3.1)
+    repeated float flex_features    = 4 [packed = true];
 
-  // Optional orientation quaternion: [w, x, y, z]
-  repeated float quaternion = 5;  // max 4 elements
+    /// L1 on-device gesture prediction (class index, 0-based)
+    uint32 l1_gesture_id   = 5;
 
-  // Device status bitmask:
-  //   bit 0 — sensor data valid
-  //   bit 1 — IMU calibrated
-  //   bit 2 — low battery warning
-  uint32 status           = 6;
+    /// L1 prediction confidence (0.0 – 1.0, softmax output)
+    float l1_confidence    = 6;
 
-  // Battery voltage in millivolts (optional).
-  uint32 battery_mv       = 7;
+    /// True if L2 (cloud/edge server) inference is requested for this frame
+    bool l2_requested      = 7;
+
+    /// System status string for debugging
+    /// Values: "STREAMING" | "MODEL_SWITCHING" | "ERROR" | "CALIBRATING" | "IDLE"
+    string status          = 8;
 }

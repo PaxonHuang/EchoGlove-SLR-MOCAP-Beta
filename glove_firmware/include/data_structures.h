@@ -17,7 +17,29 @@
 
 #include <cstdint>
 #include <cstring>
+#ifndef UNIT_TEST
 #include <Arduino.h>
+#else
+// Stubs for native testing
+#ifndef PROGMEM
+#define PROGMEM
+#endif
+#include <cstdio>
+#include <cstdlib>
+#include <cstdarg>
+#define ps_malloc malloc
+// Minimal Serial stub
+struct _SerialStub {
+    void println(const char* s) { puts(s); }
+    void printf(const char* fmt, ...) {
+        va_list args;
+        va_start(args, fmt);
+        vprintf(fmt, args);
+        va_end(args);
+    }
+};
+static _SerialStub Serial;
+#endif
 
 // =============================================================================
 // Compile-Time Constants
