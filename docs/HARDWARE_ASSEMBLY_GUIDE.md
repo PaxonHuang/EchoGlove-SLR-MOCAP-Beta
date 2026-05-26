@@ -40,7 +40,7 @@
 │   上拉电阻 2kΩ (SDA→3.3V, SCL→3.3V)   │  │││      │   │       │   │
 │                                      │ ││││      │   │       │   │
 │   ┌──────────────────────────────────┼─┼┼┼┼──────┼───┼───┐   │   │
-│   │         PCA9548A (0x70)          │ ││││      │   │   │   │   │
+│   │         TCA9548A (0x70)          │ ││││      │   │   │   │   │
 │   │    8-Channel I2C Multiplexer     │ ││││      │   │   │   │   │
 │   │                                  │ ││││      │   │   │   │   │
 │   │  SD0 ─── Ch0 ──► TMAG5273 #0 (拇指) │││      │   │   │   │   │
@@ -53,7 +53,7 @@
 │   │  SC3 ─── Ch3 ──► (addr 0x22)     ││││      │   │   │   │   │
 │   │  SD4 ─── Ch4 ──► TMAG5273 #4 (小指) │      │   │   │   │   │
 │   │  SC4 ─── Ch4 ──► (addr 0x22)     ││││      │   │   │   │   │
-│   │  SD5 ─── Ch5 ──► BNO085 (addr 0x4A) ││     │   │   │   │   │
+│   │  SD5 ─── Ch5 ──► BNO085 (addr 0x4B) ││     │   │   │   │   │
 │   │  SC5 ─── Ch5 ──► (IMU, wrist)    ││││      │   │   │   │   │
 │   │  Ch6-7 ─── Reserved              ││││      │   │   │   │   │
 │   └──────────────────────────────────┼─┼┼┼┼──────┼───┼───┘   │   │
@@ -70,9 +70,9 @@
 | # | 组件 | 型号/规格 | 数量 | I2C 地址 | 用途 |
 |---|------|----------|------|----------|------|
 | 1 | MCU | ESP32-S3-DevKitC-1 N16R8 | 1 | — | 主控制器 |
-| 2 | IMU | **GY-BNO085** (BNO085 9-DOF Breakout, Adafruit) | 1 | **0x4A** | 腕部姿态 (四元数+陀螺仪) |
+| 2 | IMU | **GY-BNO085** (BNO085 9-DOF Breakout, 7Semi) | 1 | **0x4B** | 腕部姿态 (四元数+陀螺仪) |
 | 3 | 霍尔传感器 | TMAG5273A1 Breakout | 5 | **0x22** (全部) | 手指弯曲检测 |
-| 4 | I2C 多路复用器 | **PCA9548A** Breakout (NXP, 兼容 TCA9548A) | 1 | **0x70** | 解决地址冲突 |
+| 4 | I2C 多路复用器 | **Adafruit TCA9548A** 1-to-8 I2C Multiplexer Breakout | 1 | **0x70** | 解决地址冲突 |
 | 5 | 上拉电阻 (主总线) | 2kΩ (0603) | 2 | — | SDA→3.3V, SCL→3.3V |
 | 6 | 上拉电阻 (子通道 Ch5) | 5.1kΩ (0603) | 2 | — | Ch5 SD5→3.3V, SC5→3.3V (BNO085, **已安装**) |
 | 7 | 上拉电阻 (子通道 Ch0-4) | 4.7kΩ (0603) | 10 | — | 每通道 SDx/SCx→3.3V (TMAG5273 到货后安装) |
@@ -84,10 +84,10 @@
 
 ## 2 I2C 总线接线
 
-### 2.1 主总线 (ESP32-S3 → PCA9548A)
+### 2.1 主总线 (ESP32-S3 → TCA9548A)
 
 ```
-ESP32-S3-DevKitC-1                        PCA9548A Breakout
+ESP32-S3-DevKitC-1                        TCA9548A Breakout
 ┌──────────────────┐                     ┌─────────────────┐
 │                  │                     │                 │
 │   3.3V  ─────────┼──┬──────────────────┼── VCC           │
@@ -111,14 +111,14 @@ ESP32-S3-DevKitC-1                        PCA9548A Breakout
                     都连接到 3.3V
 ```
 
-> **⚠️ 关键**: PCA9548A 的 A0/A1/A2 全部接 GND → I2C 地址 = 0x70。
+> **⚠️ 关键**: TCA9548A 的 A0/A1/A2 全部接 GND → I2C 地址 = 0x70。
 > `/RST` 引脚接 3.3V (不使用外部复位)。主总线上拉 2kΩ，确保 400kHz Fast Mode 信号完整性。
 > **子通道上拉**: Ch5 (GY-BNO085) 已安装 5.1kΩ 上拉电阻 (SD5/SC5→3.3V)。Ch0-4 (TMAG5273) 到货后安装 4.7kΩ 上拉电阻。
 
-### 2.2 子通道总线 (PCA9548A → 传感器)
+### 2.2 子通道总线 (TCA9548A → 传感器)
 
 ```
-PCA9548A                                  传感器
+TCA9548A                                  传感器
 ┌─────────────────┐          ┌──────────────────────────────┐
 │                 │          │                              │
 │  SD0 ───────────┼──────────┼── SDA    TMAG5273 #0 (拇指)  │
@@ -137,7 +137,7 @@ PCA9548A                                  传感器
 │  SC4 ───────────┼──────────┼── SCL    addr = 0x22        │
 │                 │          │          Ch4 上拉 4.7kΩ     │
 │  SD5 ───────────┼──────────┼── SDA    GY-BNO085 (IMU)    │
-│  SC5 ───────────┼──────────┼── SCL    addr = 0x4A        │
+│  SC5 ───────────┼──────────┼── SCL    addr = 0x4B        │
 │                 │          │          Ch5 上拉 5.1kΩ (已安装) │
 │  3.3V ──────────┼──────────┼── VCC    全部传感器 VCC      │
 │  GND ───────────┼──────────┼── GND    全部传感器 GND      │
@@ -172,7 +172,7 @@ GPIO21 配置为 INPUT_PULLUP，无需外部上拉电阻。
 
 ### 3.1 TMAG5273 ×5 (手指霍尔传感器)
 
-| 手指 | PCA9548A 通道 | I2C 地址 | VCC | GND | 安装位置 |
+| 手指 | TCA9548A 通道 | I2C 地址 | VCC | GND | 安装位置 |
 |------|-------------|----------|-----|-----|---------|
 | 拇指 (Thumb) | Ch0 | 0x22 | 3.3V | GND | 拇指 PIP 关节背侧 |
 | 食指 (Index) | Ch1 | 0x22 | 3.3V | GND | 食指 PIP 关节背侧 |
@@ -180,13 +180,13 @@ GPIO21 配置为 INPUT_PULLUP，无需外部上拉电阻。
 | 无名指 (Ring) | Ch3 | 0x22 | 3.3V | GND | 无名指 PIP 关节背侧 |
 | 小指 (Pinky) | Ch4 | 0x22 | 3.3V | GND | 小指 PIP 关节背侧 |
 
-> **复用原理**: 5 个 TMAG5273 的 I2C 地址完全相同 (0x22)，依靠 PCA9548A 通道选择分时访问。每次读取前先 `selectChannel(ch)`，读完后 `disableAll()`。
+> **复用原理**: 5 个 TMAG5273 的 I2C 地址完全相同 (0x22)，依靠 TCA9548A 通道选择分时访问。每次读取前先 `selectChannel(ch)`，读完后 `disableAll()`。
 
 ### 3.2 GY-BNO085 (腕部 IMU)
 
-| 设备 | PCA9548A 通道 | I2C 地址 | VCC | GND | INT | 子通道上拉 | 安装位置 |
+| 设备 | TCA9548A 通道 | I2C 地址 | VCC | GND | INT | 子通道上拉 | 安装位置 |
 |------|-------------|----------|-----|-----|-----|---------|---------|
-| GY-BNO085 | Ch5 | 0x4A | 3.3V | GND | GPIO21 | 5.1kΩ (已安装) | 腕部背侧 |
+| GY-BNO085 | Ch5 | 0x4B | 3.3V | GND | GPIO21 | 5.1kΩ (已安装) | 腕部背侧 |
 
 ### 3.3 Flex 传感器 (预留，V3.1 启用)
 
@@ -225,7 +225,7 @@ ESP32-S3-DevKitC-1 (N16R8)
     ▼                  ▼                  ▼              ▼
   VCC(3.3V)          GND              GPIO8=SDA      GPIO9=SCL
   所有传感器          所有传感器         I2C 数据       I2C 时钟
-  PCA9548A VCC       PCA9548A GND     400kHz         400kHz
+  TCA9548A VCC       TCA9548A GND     400kHz         400kHz
   TMAG5273×5 VCC     TMAG5273×5 GND   上拉 2kΩ     上拉 2kΩ
   BNO085 VCC         BNO085 GND
 
@@ -263,7 +263,7 @@ ESP32-S3 其余 GPIO 分配:
           │                    │                    │
           ▼                    ▼                    ▼
     ┌──────────┐      ┌──────────────┐      ┌──────────┐
-    │ PCA9548A │      │ TMAG5273 ×5  │      │  BNO085  │
+    │ TCA9548A │      │ TMAG5273 ×5  │      │  BNO085  │
     │  ~1mA    │      │  5×~2mA=10mA │      │  ~15mA   │
     └──────────┘      └──────────────┘      └──────────┘
 
@@ -271,7 +271,7 @@ ESP32-S3 其余 GPIO 分配:
   ESP32-S3 (活跃)    ~80mA  (WiFi+BLE on)
   BNO085             ~15mA
   TMAG5273 ×5        ~10mA  (Set/Reset 模式, 间歇采样)
-  PCA9548A            ~2mA
+  TCA9548A            ~2mA
   ─────────────────────────
   合计               ~107mA
 
@@ -360,24 +360,24 @@ ESP32-S3 其余 GPIO 分配:
 
 ```
 步骤 1: 电源总线
-  ├── 将 3.3V 和 GND 从 ESP32-S3 连接到 PCA9548A
-  ├── 从 PCA9548A 引出 3.3V/GND 分支线 (6组)
+  ├── 将 3.3V 和 GND 从 ESP32-S3 连接到 TCA9548A
+  ├── 从 TCA9548A 引出 3.3V/GND 分支线 (6组)
   └── 验证: 用万用表测量各端点 3.3V ±0.1V
 
 步骤 2: 主 I2C 总线
-  ├── 焊接 SDA (GPIO8) → PCA9548A SDA
-  ├── 焊接 SCL (GPIO9) → PCA9548A SCL
+  ├── 焊接 SDA (GPIO8) → TCA9548A SDA
+  ├── 焊接 SCL (GPIO9) → TCA9548A SCL
   ├── 焊接 2kΩ 上拉电阻 (SDA→3.3V, SCL→3.3V)
-  └── 验证: 上电后用 I2C Scanner 扫描 0x70 (PCA9548A)
+  └── 验证: 上电后用 I2C Scanner 扫描 0x70 (TCA9548A)
 
 步骤 3: 子通道 I2C 总线 (逐通道)
-  ├── Ch0: PCA9548A SD0/SC0 → TMAG5273 #0 (拇指)
+  ├── Ch0: TCA9548A SD0/SC0 → TMAG5273 #0 (拇指)
   │   └── 焊接 4.7kΩ 上拉 (SD0→3.3V, SC0→3.3V) — TMAG5273 到货后
-  ├── Ch1: PCA9548A SD1/SC1 → TMAG5273 #1 (食指) + 4.7kΩ
-  ├── Ch2: PCA9548A SD2/SC2 → TMAG5273 #2 (中指) + 4.7kΩ
-  ├── Ch3: PCA9548A SD3/SC3 → TMAG5273 #3 (无名指) + 4.7kΩ
-  ├── Ch4: PCA9548A SD4/SC4 → TMAG5273 #4 (小指) + 4.7kΩ
-  └── Ch5: PCA9548A SD5/SC5 → BNO085 (当前无子通道上拉，通过主总线上拉工作)
+  ├── Ch1: TCA9548A SD1/SC1 → TMAG5273 #1 (食指) + 4.7kΩ
+  ├── Ch2: TCA9548A SD2/SC2 → TMAG5273 #2 (中指) + 4.7kΩ
+  ├── Ch3: TCA9548A SD3/SC3 → TMAG5273 #3 (无名指) + 4.7kΩ
+  ├── Ch4: TCA9548A SD4/SC4 → TMAG5273 #4 (小指) + 4.7kΩ
+  └── Ch5: TCA9548A SD5/SC5 → BNO085 (当前无子通道上拉，通过主总线上拉工作)
 
 步骤 4: BNO085 中断线
   ├── 焊接 BNO085 INT → ESP32-S3 GPIO21
@@ -419,8 +419,8 @@ ESP32-S3 其余 GPIO 分配:
     └── 无芯片异常发热 (>50°C 为异常)
 
 3. I2C 扫描 (烧录任意 I2C Scanner 固件):
-    ├── 地址 0x70 应有响应 (PCA9548A, 无需选择通道)
-    └── 切换各通道后扫描 0x22 和 0x4A
+    ├── 地址 0x70 应有响应 (TCA9548A, 无需选择通道)
+    └── 切换各通道后扫描 0x22 和 0x4B
 ```
 
 ### 8.2 烧录固件后的功能验证
@@ -438,7 +438,7 @@ ESP32-S3 其余 GPIO 分配:
 
    [SensorManager] V3 Initialization Start
    [SensorManager] I2C initialized: SDA=8, SCL=9, 400 kHz
-   [PCA9548A] Initialized at 0x70
+   [TCA9548A] Initialized at 0x70
    [TMAG5273] Sensor on mux ch0 initialized (addr=0x22, ±40mT, 32× avg)
    [TMAG5273] Sensor on mux ch1 initialized (addr=0x22, ±40mT, 32× avg)
    [TMAG5273] Sensor on mux ch2 initialized (addr=0x22, ±40mT, 32× avg)
@@ -474,7 +474,7 @@ ESP32-S3 其余 GPIO 分配:
 
 | 现象 | 可能原因 | 解决方法 |
 |------|---------|---------|
-| `PCA9548A not found` | I2C 接线错误 / 地址不对 | 检查 SDA/SCL 连接，A0/A1/A2 是否接 GND |
+| `TCA9548A not found` | I2C 接线错误 / 地址不对 | 检查 SDA/SCL 连接，A0/A1/A2 是否接 GND |
 | `Hall sensors: 0/5` | 子通道上拉缺失 | 检查每个通道 4.7kΩ 上拉电阻 |
 | `Hall sensors: 3/5` | 个别传感器焊接问题 | 逐一排查：哪个通道失败 → 重焊该通道 |
 | `BNO085 begin() failed` | Ch5 未选择 / INT 未连接 | 检查 Ch5 上拉，确认 BNO085 的 INT 引脚连到 GPIO21 |
@@ -484,7 +484,7 @@ ESP32-S3 其余 GPIO 分配:
 
 | 现象 | 可能原因 | 解决方法 |
 |------|---------|---------|
-| 所有通道数据相同 | PCA9548A 通道未切换 | 检查 selectChannel() 逻辑 |
+| 所有通道数据相同 | TCA9548A 通道未切换 | 检查 selectChannel() 逻辑 |
 | Hall 数据全部为 0 | 磁铁未安装 / 距离太远 | 调整磁铁位置 (<15mm) |
 | Hall 数据跑到 ±40mT | 磁铁太近 / 超出量程 | 增大磁铁间距或换小磁铁 |
 | 欧拉角漂移 | BNO085 未完成校准 | 上电后静止 2 秒完成自动校准 |
@@ -507,9 +507,9 @@ void i2cScanner() {
 }
 
 // 期望结果:
-//   0x22 — TMAG5273 (需先 PCA9548A selectChannel)
-//   0x4A — BNO085 (需先 PCA9548A selectChannel(5))
-//   0x70 — PCA9548A (始终可见)
+//   0x22 — TMAG5273 (需先 TCA9548A selectChannel)
+//   0x4B — BNO085 (需先 TCA9548A selectChannel(5))
+//   0x70 — TCA9548A (始终可见)
 ```
 
 ---

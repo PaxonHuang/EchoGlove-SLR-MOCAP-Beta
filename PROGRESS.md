@@ -1,6 +1,6 @@
 # PROGRESS.md — Cross-Session State Tracker
 
-**Last updated**: 2026-05-22
+**Last updated**: 2026-05-26
 
 ---
 
@@ -128,7 +128,7 @@ ESP32-S3 connected to Ubuntu via USB CDC (`/dev/ttyACM0`). Hardware partially wi
 | 1 | Permission denied on `/dev/ttyACM0` | Installed udev rules (`/etc/udev/rules.d/99-platformio-udev.rules`), added to `dialout` group |
 | 2 | ESP32-S3 USB CDC Serial not outputting after boot | Added `-DARDUINO_USB_CDC_ON_BOOT=1` to `platformio.ini` |
 | 3 | Core dump checksum error blocking flash write | Erased flash with `pio run -t erase` before re-upload |
-| 4 | I2C scanner hanging (ESP-IDF blocking on NACK) | Reduced scan to minimal address tests (0x70, 0x4A, 0x22) |
+| 4 | I2C scanner hanging (ESP-IDF blocking on NACK) | Reduced scan to minimal address tests (0x70, 0x4B, 0x22) |
 | 5 | Build error: braces around scalar initializer for float | Removed `PROGMEM`, used double brace syntax `{{...}, ...}` for GestureSignature array |
 
 ### Hardware Configuration Update (2026-05-21)
@@ -136,8 +136,8 @@ ESP32-S3 connected to Ubuntu via USB CDC (`/dev/ttyACM0`). Hardware partially wi
 - **Pull-ups changed**: Main bus 5.1kΩ → **2kΩ** (closer to SOP 2.2kΩ spec, faster rise time at 400kHz)
 - **Channel fix**: Firmware `MuxChannels::BNO085_IMU` changed from 7 → **5** to match hardware wiring (SD5/SC5)
 - **Ch5 sub-bus pull-ups**: Installed **5.1kΩ** on SD5/SC5→3.3V for GY-BNO085
-- **Hardware clarification**: Using **PCA9548A** (NXP, register-compatible with TCA9548A) and **GY-BNO085** (Adafruit breakout, likely has onboard pull-ups)
-- **Ch0-4 sub-bus pull-ups**: Not installed (TMAG5273s not arrived). Main bus 2kΩ passes through PCA9548A internal switches — sufficient for testing.
+- **Hardware clarification**: MUX is **Adafruit TCA9548A 1-to-8 I2C Multiplexer Breakout** (not bare PCA9548A DIP chip). IMU is **7Semi GY-BNO085** module.
+- **Ch0-4 sub-bus pull-ups**: Not installed (TMAG5273s not arrived). Main bus 2kΩ passes through TCA9548A internal switches — sufficient for testing.
 
 ### Simulation Mode Implementation
 
@@ -162,15 +162,24 @@ SensorManager now falls back to synthetic data generation when TCA9548A is not d
 | `docs/HARDWARE_WIRING_DEBUG_GUIDE_DM40B.md` | Created — DM40B multimeter wiring verification guide |
 | `docs/SESSION_SUMMARY_2026-05-20_HARDWARE_DEBUG_SIMULATION.md` | Created — full session summary |
 
-### Hardware Issue — UNRESOLVED
+### Hardware Issue — RESOLVED (2026-05-26)
 
-I2C devices (TCA9548A at 0x70, BNO085 at 0x4A) return NACK. Suspected causes:
-- Devices may not be powered (no LEDs visible)
-- Wiring not connected properly
-- ~~5.1kΩ pull-ups~~ → Fixed: now 2kΩ (appropriate for 400kHz Fast Mode at 3.3V)
-- ~~Channel mismatch (code=7, hardware=5)~~ → Fixed: code changed to channel 5
+**Root cause identified through systematic isolation testing:**
 
-**Next action**: Follow DM40B multimeter wiring debug guide to verify physical connections
+| Date | Finding |
+|------|---------|
+| 2026-05-22 | First I2C mux (bare PCA9548A DIP-16) defective — internal SDA↔SCL short (0.82kΩ) |
+| 2026-05-24 | Discovered actual hardware is **Adafruit TCA9548A Breakout** (not bare PCA9548A) — corrected pinout assumptions |
+| 2026-05-25 | Adafruit TCA9548A module also **defective** — all NACKs even with correct wiring verified by multimeter (VIN=3.14V, RST=2.98V, SDA=3.06V all correct) |
+| 2026-05-25 | **BNO085 confirmed working** at address **0x4B** (not 0x4A) via direct I2C bypass (removed TCA9548A from bus). SHTP communication verified. |
+
+**Current hardware status:**
+- **BNO085**: Working at address **0x4B** (direct connection). Firmware updated.
+- **Adafruit TCA9548A**: **Dead** — 2nd defective mux module. Needs replacement order.
+- **TMAG5273 Hall sensors**: Not yet installed (awaiting TCA9548A replacement)
+- **I2C bus**: Confirmed functional (ESP32 GPIO8/9, 2kΩ pull-ups, breadboard)
+
+**Action required**: Order replacement Adafruit TCA9548A 1-to-8 I2C Multiplexer Breakout
 
 ---
 

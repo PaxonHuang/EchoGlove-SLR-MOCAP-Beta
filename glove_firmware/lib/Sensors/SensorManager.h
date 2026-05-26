@@ -219,7 +219,7 @@ private:
 
         _mux.selectChannel(MuxChannels::BNO085_IMU);
 
-        if (!_imu.begin_I2C(0x4A, &Wire)) {
+        if (!_imu.begin_I2C(0x4B, &Wire)) {
             Serial.println("[SensorManager] BNO085 begin() failed");
             _mux.disableAll();
             return false;

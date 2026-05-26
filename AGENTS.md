@@ -163,7 +163,7 @@ ESP32-S3                    Python Relay              Web Frontend
 
 - **MCU**: ESP32-S3-DevKitC-1 N16R8 (8MB Flash + 8MB PSRAM)
 - **I2C**: GPIO 8 (SDA), GPIO 9 (SCL), 400kHz
-- **Sensors**: 5× TMAG5273 (via TCA9548A mux), 1× BNO085 (address 0x4A)
+- **Sensors**: 5× TMAG5273 (via Adafruit TCA9548A mux), 1× BNO085 (address 0x4B)
 
 ---
 
