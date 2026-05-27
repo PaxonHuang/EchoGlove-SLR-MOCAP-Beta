@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
 """
 glove_relay.src.udp_server — Asyncio UDP server for receiving ESP32 data.
 
@@ -13,7 +15,6 @@ Protocol flow
    ``on_data_callback``.
 """
 
-from __future__ import annotations
 
 import asyncio
 import time

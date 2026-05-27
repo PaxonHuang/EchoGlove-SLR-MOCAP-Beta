@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
 """
 glove_relay.src.protobuf_parser — Parse GloveData Protobuf messages.
 
@@ -13,7 +15,6 @@ The ESP32 firmware serialises sensor readings using ``glove_data.proto``
         python -m grpc_tools.protoc -Iproto --python_out=proto proto/glove_data.proto
 """
 
-from __future__ import annotations
 
 from typing import Any
 

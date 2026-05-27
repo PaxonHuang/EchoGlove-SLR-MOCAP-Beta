@@ -31,7 +31,17 @@
       "Bash(sudo -S *)",
       "Bash(python3 *)",
       "Bash(ln -s tests test)",
-      "Bash(protoc --version)"
+      "Bash(protoc --version)",
+      "Bash(stty -F /dev/ttyACM0 115200 raw -echo)",
+      "Bash(dmesg)",
+      "Bash(stty -F /dev/ttyACM0 115200 raw -echo -hupcl)",
+      "Bash(npx tsc *)",
+      "Bash(/home/paxon/miniconda3/envs/pytorch21_env/bin/pip list *)",
+      "Bash(/home/paxon/miniconda3/envs/tf216/bin/pip list *)",
+      "Bash(/home/paxon/miniconda3/envs/pytorch21_env/bin/python *)",
+      "Bash(/home/paxon/miniconda3/envs/tf216/bin/python *)",
+      "Bash(/home/paxon/miniconda3/envs/tf216/bin/pip install *)",
+      "Bash(/home/paxon/miniconda3/envs/pytorch21_env/bin/pip install *)"
     ]
   }
 }

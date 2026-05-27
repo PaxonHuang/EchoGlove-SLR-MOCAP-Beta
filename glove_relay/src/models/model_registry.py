@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
 """
 glove_relay.src.models.model_registry — Central model registry with hot-switching.
 
@@ -8,7 +10,6 @@ The registry owns the currently-active L1 and L2 models.  It can:
   * Provide a singleton accessor for other components.
 """
 
-from __future__ import annotations
 
 import importlib
 from pathlib import Path

@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
 """
 glove_relay.src.main — FastAPI application entry point.
 
@@ -15,7 +17,6 @@ Usage
     python -m src.main                    # equivalent (calls main())
 """
 
-from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager

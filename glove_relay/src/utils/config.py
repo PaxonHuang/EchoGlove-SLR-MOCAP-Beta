@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
 """
 glove_relay.src.utils.config — YAML configuration loader with typed access.
 
@@ -10,7 +12,6 @@ Usage
     print(cfg.inference.l1_confidence_threshold)  # 0.85
 """
 
-from __future__ import annotations
 
 import yaml
 from dataclasses import dataclass, field

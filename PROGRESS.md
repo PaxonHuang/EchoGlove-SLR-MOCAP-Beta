@@ -162,69 +162,70 @@ SensorManager now falls back to synthetic data generation when TCA9548A is not d
 | `docs/HARDWARE_WIRING_DEBUG_GUIDE_DM40B.md` | Created — DM40B multimeter wiring verification guide |
 | `docs/SESSION_SUMMARY_2026-05-20_HARDWARE_DEBUG_SIMULATION.md` | Created — full session summary |
 
-### Hardware Issue — RESOLVED (2026-05-26)
+### Hardware Debug History — RESOLVED (2026-05-26)
 
-**Root cause identified through systematic isolation testing:**
+**Systematic isolation testing revealed the root cause:**
 
 | Date | Finding |
 |------|---------|
 | 2026-05-22 | First I2C mux (bare PCA9548A DIP-16) defective — internal SDA↔SCL short (0.82kΩ) |
 | 2026-05-24 | Discovered actual hardware is **Adafruit TCA9548A Breakout** (not bare PCA9548A) — corrected pinout assumptions |
-| 2026-05-25 | Adafruit TCA9548A module also **defective** — all NACKs even with correct wiring verified by multimeter (VIN=3.14V, RST=2.98V, SDA=3.06V all correct) |
-| 2026-05-25 | **BNO085 confirmed working** at address **0x4B** (not 0x4A) via direct I2C bypass (removed TCA9548A from bus). SHTP communication verified. |
+| 2026-05-25 | Second Adafruit TCA9548A also failed — all NACKs. Confirmed **defective module** via direct BNO085 bypass test |
+| 2026-05-25 | **BNO085 confirmed working** at address **0x4B** (not 0x4A) via direct I2C bypass. Firmware updated. |
+| 2026-05-26 | Third TCA9548A (PW548A TI chip) installed. Direct wire test: **TCA9548A confirmed ACK at 0x70** when bypassing breadboard. |
+
+**Root cause**: **Breadboard contact failure**. All 3 mux modules were likely functional — the breadboard's spring contacts degraded after multiple insertions/removals, causing intermittent I2C connections. Physical bus test (GPIO toggle + pull-up recovery) passed, but I2C protocol failed because the breadboard introduced resistance/intermittency at the signal level.
+
+**Key diagnostic evidence:**
+- Physical bus test: SDA/SCL toggle OK, recovery 0µs → pull-ups and GPIO healthy
+- Hardware I2C: all NACK/TIMEOUT → protocol-level failure
+- Bit-bang I2C: all NACK → same, not ESP32 peripheral issue
+- **Bypass breadboard with Dupont wires: TCA9548A found at 0x70 ✓** → breadboard confirmed as root cause
 
 **Current hardware status:**
-- **BNO085**: Working at address **0x4B** (direct connection). Firmware updated.
-- **Adafruit TCA9548A**: **Dead** — 2nd defective mux module. Needs replacement order.
-- **TMAG5273 Hall sensors**: Not yet installed (awaiting TCA9548A replacement)
-- **I2C bus**: Confirmed functional (ESP32 GPIO8/9, 2kΩ pull-ups, breadboard)
+- **Adafruit TCA9548A (PW548A chip)**: **Working** — confirmed via direct Dupont wire connection
+- **BNO085**: Working at address **0x4B**. Firmware updated.
+- **TMAG5273 Hall sensors**: Not yet installed (awaiting new breadboard + sub-bus pull-ups)
+- **I2C bus**: Confirmed functional when bypassing breadboard
 
-**Action required**: Order replacement Adafruit TCA9548A 1-to-8 I2C Multiplexer Breakout
+**Action required**: Buy new breadboard, new Dupont wires, and reassemble. User purchasing tonight (2026-05-26).
 
 ---
 
 ## Active Work
 
-**Current**: Phase 3 — L1 Edge Inference (Edge Impulse MVP Path A)
+**Current**: Hardware reassembly complete — resuming Phase 1–4 integration testing with new breadboard + wires + TCA9548A.
 
-Simulation mode is operational. Can proceed with Edge Impulse data collection using synthetic data while hardware debugging continues in parallel.
+User has purchased and correctly wired new hardware (breadboard, Dupont wires, Adafruit TCA9548A). Next session: run I2C scan → sensor init → signal pipeline → full integration test (Phase 1–4).
 
-### Priority: Path A — Edge Impulse MVP (快速验证)
+### Conda Environments Ready
 
-Per SOP §6.1, ESP32 CSV output already compatible with `edge-impulse-data-forwarder`. Steps:
-
-1. ✅ Install edge-impulse-cli: `npm install -g edge-impulse-cli`
-2. ✅ Firmware outputs CSV in simulation mode (20 gesture classes)
-3. **→ NEXT**: Start data forwarder: `edge-impulse-data-forwarder --baud-rate 115200 --frequency 100`
-4. Collect labeled gesture data in Edge Impulse Studio (30-60 samples per gesture)
-5. Train 1D-CNN classifier (200 epochs, lr=0.001)
-6. Export as Arduino Library → integrate via PlatformIO `lib_deps`
-
-**Target**: 2-3 days to MVP verification (simulation data available immediately)
-
-Path B (PyTorch → TFLite INT8) deferred to Phase 3.5 Benchmark.
-
-### Parallel Work Tracks
-
-| Track | Status | Blocking? |
-|-------|--------|-----------|
-| Edge Impulse data collection (simulation) | Ready to start | **No** — synthetic data available |
-| Hardware verification (DM40B multimeter) | User action needed | **No** — simulation mode unblocks firmware |
-| TMAG5273 sensor installation | Awaiting delivery | **No** — reserved in simulation mode |
+| Environment | Python | PyTorch | Use Case | Relay Tests |
+|-------------|--------|---------|----------|-------------|
+| `pytorch21_env` | 3.9.25 | 2.1.0+cpu | ST-GCN training, relay dev | **99/99 ✓** |
+| `tf216` | 3.11.9 | 2.1.0+cpu | TFLite training, model export | **99/99 ✓** |
 
 ### Phase Status Summary
 
 | Phase | Name | Status |
 |-------|------|--------|
 | P0 | Project init | Done |
-| P1 | HAL & drivers | Done |
-| P2 | Signal processing | Done |
+| P1 | HAL & drivers | Done (code) — **needs hardware re-verify with new breadboard** |
+| P2 | Signal processing | Done (code) — **needs hardware re-verify** |
 | P3 | L1 Edge Inference — Pipeline + TDD | Done (42/44 native tests) |
 | P3.5 | Model Benchmark | Pending |
-| P4 | Communication (BLE/UDP/Protobuf) | Done (84/84 relay tests) |
-| P5 | Python Relay + L2 ST-GCN | **← ACTIVE** (84/84 tests, ST-GCN verified) |
+| P4 | Communication (BLE/UDP/Protobuf) | Done (99/99 relay tests incl. NLP grammar) |
+| P5 | Python Relay + L2 ST-GCN | **← ACTIVE** (99/99 tests, ST-GCN verified) |
 | P6 | Web rendering / Unity Pro | Scaffold exists |
 | P7 | Integration testing | Pending |
+
+### Next Steps (ordered)
+
+1. **I2C scan** on new breadboard: `pio run -t upload && pio device monitor` — expect 0x70, 0x4B, 0x22
+2. **Sensor validation**: verify Hall sensors (Ch0–4) and BNO085 (Ch5) read real data
+3. **CSV output**: confirm Edge Impulse compatible format on serial
+4. **Edge Impulse data collection** (Path A MVP)
+5. **Phase 5 continued**: NLP/TTS tests, model training pipeline
 
 ---
 

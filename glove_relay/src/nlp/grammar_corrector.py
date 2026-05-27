@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
 """
 glove_relay.src.nlp.grammar_corrector — CSL → Mandarin grammar correction.
 
@@ -14,7 +16,6 @@ This module provides a **rule-based** corrector that converts sequences of
 gesture IDs into fluent Mandarin sentences.
 """
 
-from __future__ import annotations
 
 import json
 from pathlib import Path

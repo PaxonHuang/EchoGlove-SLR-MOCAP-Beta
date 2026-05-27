@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
 """
 glove_relay.src.models.l1_ms_tcn — Multi-Scale Temporal Convolutional Network (L1).
 
@@ -23,7 +25,6 @@ Training
         --num_classes 46
 """
 
-from __future__ import annotations
 
 import argparse
 from typing import Any

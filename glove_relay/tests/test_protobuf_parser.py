@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
-"""
-TDD Tests for protobuf_parser — parse GloveData messages.
-
-Pipeline: ESP32 serializes GloveData → UDP bytes → parse_glove_data() → dict
-"""
+from __future__ import annotations
+"""TDD Tests for protobuf_parser — parse GloveData messages."""
 
 import pytest
 import struct
