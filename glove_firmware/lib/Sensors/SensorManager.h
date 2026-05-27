@@ -50,10 +50,7 @@ public:
         : _mux(TCA9548A::DEFAULT_ADDR, &Wire),
           _hall{
               TMAG5273(&_mux, MuxChannels::HALL_SENSOR_0, TMAG5273::DEFAULT_ADDR, &Wire),
-              TMAG5273(&_mux, MuxChannels::HALL_SENSOR_1, TMAG5273::DEFAULT_ADDR, &Wire),
-              TMAG5273(&_mux, MuxChannels::HALL_SENSOR_2, TMAG5273::DEFAULT_ADDR, &Wire),
-              TMAG5273(&_mux, MuxChannels::HALL_SENSOR_3, TMAG5273::DEFAULT_ADDR, &Wire),
-              TMAG5273(&_mux, MuxChannels::HALL_SENSOR_4, TMAG5273::DEFAULT_ADDR, &Wire)
+              // TODO: Add HALL_SENSOR_1..4 when fingers are wired
           },
           _imu(),
           _initialized(false), _imu_ok(false), _seq(0),

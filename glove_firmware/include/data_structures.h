@@ -46,7 +46,8 @@ static _SerialStub Serial;
 // =============================================================================
 
 /// Number of 3-axis Hall sensors on the glove
-static constexpr uint8_t NUM_HALL_SENSORS = 5;
+/// TODO: Restore to 5 when all fingers are wired (ch0-ch4)
+static constexpr uint8_t NUM_HALL_SENSORS = 1;  // Only thumb (ch0) connected
 
 /// Axes per Hall sensor (X, Y, Z)
 static constexpr uint8_t HALL_AXES = 3;

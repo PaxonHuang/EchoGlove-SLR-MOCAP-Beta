@@ -41,7 +41,16 @@
       "Bash(/home/paxon/miniconda3/envs/pytorch21_env/bin/python *)",
       "Bash(/home/paxon/miniconda3/envs/tf216/bin/python *)",
       "Bash(/home/paxon/miniconda3/envs/tf216/bin/pip install *)",
-      "Bash(/home/paxon/miniconda3/envs/pytorch21_env/bin/pip install *)"
+      "Bash(/home/paxon/miniconda3/envs/pytorch21_env/bin/pip install *)",
+      "Bash(conda create *)",
+      "Bash(/home/paxon/miniconda3/envs/tf_env/bin/pip install *)",
+      "Bash(/home/paxon/miniconda3/envs/tf_env/bin/python -c \"import torch; print\\(torch.__version__\\)\")",
+      "Bash(/home/paxon/miniconda3/envs/tf_env/bin/python -c \"import tensorflow; print\\(tensorflow.__version__\\)\")",
+      "Bash(conda clean *)",
+      "Bash(/home/paxon/miniconda3/envs/pytorch_env/bin/pip cache *)",
+      "Bash(/home/paxon/miniconda3/envs/tf_env/bin/pip cache *)",
+      "Bash(/home/paxon/miniconda3/envs/tf_env/bin/python -c \"import torch; print\\(torch.__version__, torch.cuda.is_available\\(\\)\\)\")",
+      "Bash(/home/paxon/miniconda3/envs/tf_env/bin/pip list *)"
     ]
   }
 }
