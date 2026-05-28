@@ -1,6 +1,6 @@
 # PROGRESS.md — Cross-Session State Tracker
 
-**Last updated**: 2026-05-26
+**Last updated**: 2026-05-28
 
 ---
 
@@ -194,16 +194,38 @@ SensorManager now falls back to synthetic data generation when TCA9548A is not d
 
 ## Active Work
 
-**Current**: Hardware reassembly complete — resuming Phase 1–4 integration testing with new breadboard + wires + TCA9548A.
+**Current**: Phase 5 Python Relay Server COMPLETE (133/133 tests). Hardware testing paused — user purchasing new components (breadboard, Dupont wires, TCA9548A, TMAG5273 replacements). Tomorrow: Phase 1–4 hardware re-verify.
 
-User has purchased and correctly wired new hardware (breadboard, Dupont wires, Adafruit TCA9548A). Next session: run I2C scan → sensor init → signal pipeline → full integration test (Phase 1–4).
+### Phase 5 Completion Summary (2026-05-28)
+
+| Component | Tests | Status |
+|-----------|-------|--------|
+| Protobuf parser | 19/19 | Done |
+| UDP server | 23/23 | Done |
+| WebSocket manager | 15/15 | Done |
+| ST-GCN model | 27/27 | Done |
+| NLP grammar corrector | 15/15 | Done |
+| TTS engine | 13/13 | Done |
+| ConfidenceRouter | 11/11 | Done |
+| Integration tests | 10/10 | Done |
+| **Total** | **133/133** | **ALL GREEN** |
+
+New files created:
+- `src/confidence_router.py` — L1→L2 confidence-driven routing (extracted from UDPServer)
+- `tests/test_tts_engine.py` — TTS engine tests (mocked edge_tts via sys.modules injection)
+- `tests/test_confidence_router.py` — Router logic tests
+- `tests/test_integration.py` — FastAPI app lifecycle tests
+
+Modified files:
+- `src/main.py` — Added `/api/status`, `/api/tts/audio` endpoints; wired NLP+TTS+ConfidenceRouter into lifespan
+- `src/udp_server.py` — Accepts optional `router: ConfidenceRouter` parameter
 
 ### Conda Environments Ready
 
 | Environment | Python | PyTorch | Use Case | Relay Tests |
 |-------------|--------|---------|----------|-------------|
-| `pytorch21_env` | 3.9.25 | 2.1.0+cpu | ST-GCN training, relay dev | **99/99 ✓** |
-| `tf216` | 3.11.9 | 2.1.0+cpu | TFLite training, model export | **99/99 ✓** |
+| `pytorch21_env` | 3.9.25 | 2.1.0+cpu | ST-GCN training, relay dev | **133/133 ✓** |
+| `tf216` | 3.11.9 | 2.1.0+cpu | TFLite training, model export | **133/133 ✓** |
 
 ### Phase Status Summary
 
@@ -214,18 +236,17 @@ User has purchased and correctly wired new hardware (breadboard, Dupont wires, A
 | P2 | Signal processing | Done (code) — **needs hardware re-verify** |
 | P3 | L1 Edge Inference — Pipeline + TDD | Done (42/44 native tests) |
 | P3.5 | Model Benchmark | Pending |
-| P4 | Communication (BLE/UDP/Protobuf) | Done (99/99 relay tests incl. NLP grammar) |
-| P5 | Python Relay + L2 ST-GCN | **← ACTIVE** (99/99 tests, ST-GCN verified) |
+| P4 | Communication (BLE/UDP/Protobuf) | Done (133/133 relay tests) |
+| P5 | Python Relay + L2 ST-GCN + NLP + TTS | **Done** (133/133 tests) |
 | P6 | Web rendering / Unity Pro | Scaffold exists |
 | P7 | Integration testing | Pending |
 
 ### Next Steps (ordered)
 
-1. **I2C scan** on new breadboard: `pio run -t upload && pio device monitor` — expect 0x70, 0x4B, 0x22
-2. **Sensor validation**: verify Hall sensors (Ch0–4) and BNO085 (Ch5) read real data
-3. **CSV output**: confirm Edge Impulse compatible format on serial
-4. **Edge Impulse data collection** (Path A MVP)
-5. **Phase 5 continued**: NLP/TTS tests, model training pipeline
+1. **Hardware re-verify** (tomorrow): I2C scan on new breadboard → sensor validation → CSV output
+2. **Edge Impulse data collection** (Path A MVP): train L1 1D-CNN model
+3. **Model export**: TFLite → integrate into firmware
+4. **Phase 6**: React + R3F frontend (WebSocket consumer + 3D hand skeleton)
 
 ---
 

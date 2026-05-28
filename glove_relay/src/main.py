@@ -19,14 +19,19 @@ Usage
 
 
 import asyncio
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
+from src.confidence_router import ConfidenceRouter
 from src.models.model_registry import ModelRegistry
+from src.nlp.grammar_corrector import GrammarCorrector
+from src.tts.tts_engine import TTSEngine
 from src.udp_server import UDPServer
 from src.utils.config import get_config
 from src.utils.logger import get_logger
@@ -40,6 +45,9 @@ logger = get_logger(__name__)
 ws_manager = ConnectionManager()
 udp_server: UDPServer | None = None
 model_registry: ModelRegistry | None = None
+grammar_corrector: GrammarCorrector | None = None
+tts_engine: TTSEngine | None = None
+_start_time: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -48,9 +56,10 @@ model_registry: ModelRegistry | None = None
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     """Manage startup and shutdown lifecycle of the Relay server."""
-    global udp_server, model_registry  # noqa: PLW0603
+    global udp_server, model_registry, grammar_corrector, tts_engine, _start_time  # noqa: PLW0603
 
     config = get_config()
+    _start_time = time.time()
     logger.info("Relay server starting …")
 
     # --- Model registry --------------------------------------------------
@@ -62,12 +71,41 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
         model_registry.active_l2_name,
     )
 
+    # --- NLP grammar corrector -------------------------------------------
+    if config.nlp.enabled:
+        grammar_corrector = GrammarCorrector()
+        logger.info("NLP grammar corrector loaded")
+
+    # --- TTS engine ------------------------------------------------------
+    if config.tts.enabled:
+        tts_engine = TTSEngine()
+        logger.info("TTS engine loaded — voice=%s", tts_engine.voice)
+
+    # --- Confidence router -----------------------------------------------
+    def _l1_predict(features):
+        if model_registry.l1_model is not None:
+            return model_registry.l1_model.predict(features)
+        return -1, 0.0
+
+    def _l2_predict(window):
+        if model_registry.l2_model is not None:
+            return model_registry.l2_model.predict(window)
+        return -1, 0.0
+
+    router = ConfidenceRouter(
+        config=config,
+        l1_model=_l1_predict,
+        l2_model=_l2_predict,
+        grammar_corrector=grammar_corrector.correct if grammar_corrector else None,
+    )
+
     # --- UDP server (background asyncio task) ----------------------------
     udp_server = UDPServer(
         host=config.udp.host,
         port=config.udp.port,
         buffer_size=config.udp.buffer_size,
         on_data_callback=ws_manager.broadcast,
+        router=router,
     )
     udp_task = asyncio.create_task(udp_server.receive_loop(), name="udp-receive")
     logger.info("UDP server bound to %s:%d", config.udp.host, config.udp.port)
@@ -85,6 +123,9 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
 
     if model_registry is not None:
         model_registry.cleanup()
+
+    if tts_engine is not None:
+        tts_engine.clear_cache()
 
     await ws_manager.close_all()
     logger.info("Relay server stopped.")
@@ -159,6 +200,40 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket)
         logger.info("WebSocket client disconnected (%d remaining)", ws_manager.active_count)
+
+
+# ---------------------------------------------------------------------------
+# REST API — status & TTS audio
+# ---------------------------------------------------------------------------
+@app.get("/api/status")
+async def api_status() -> dict:
+    """Return system state: uptime, ports, models, NLP/TTS status."""
+    config = get_config()
+    uptime_s = time.time() - _start_time if _start_time else 0.0
+
+    l1_name = model_registry.active_l1_name if model_registry else "none"
+    l2_name = model_registry.active_l2_name if model_registry else "none"
+
+    return {
+        "uptime_s": round(uptime_s, 1),
+        "udp": {"host": config.udp.host, "port": config.udp.port},
+        "websocket": {"host": config.websocket.host, "port": config.websocket.port},
+        "ws_clients": ws_manager.active_count,
+        "models": {"l1": l1_name, "l2": l2_name},
+        "nlp": {"enabled": config.nlp.enabled, "loaded": grammar_corrector is not None},
+        "tts": {"enabled": config.tts.enabled, "loaded": tts_engine is not None},
+    }
+
+
+@app.get("/api/tts/audio")
+async def api_tts_audio(text: str = Query(..., min_length=1, max_length=200)) -> Response:
+    """Synthesize *text* to MP3 audio and return the bytes."""
+    if tts_engine is None:
+        return Response(content=b"", status_code=503, media_type="text/plain")
+    audio = await tts_engine.synthesize(text)
+    if not audio:
+        return Response(content=b"", status_code=204, media_type="text/plain")
+    return Response(content=audio, media_type="audio/mpeg")
 
 
 # ---------------------------------------------------------------------------

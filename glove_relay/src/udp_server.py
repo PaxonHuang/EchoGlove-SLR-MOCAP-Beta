@@ -23,6 +23,7 @@ from typing import Any, Callable, Deque
 
 import numpy as np
 
+from src.confidence_router import ConfidenceRouter, RouteResult
 from src.protobuf_parser import parse_glove_data
 from src.utils.config import get_config
 from src.utils.logger import get_logger
@@ -42,6 +43,7 @@ class UDPServer:
         port: int,
         buffer_size: int = 4096,
         on_data_callback: BroadcastFn | None = None,
+        router: ConfidenceRouter | None = None,
     ) -> None:
         """
         Parameters
@@ -55,17 +57,20 @@ class UDPServer:
         on_data_callback:
             Function called with a JSON-serialisable ``dict`` whenever a
             fully-processed inference result is available.
+        router:
+            Optional :class:`ConfidenceRouter` for L1→L2 routing with NLP.
         """
         self.host = host
         self.port = port
         self.buffer_size = buffer_size
         self.on_data_callback: BroadcastFn | None = on_data_callback
+        self._router: ConfidenceRouter | None = router
 
         # asyncio transport / protocol objects
         self._transport: asyncio.DatagramTransport | None = None
         self._protocol: _UDPProtocol | None = None
 
-        # Sliding window for L2 inference
+        # Sliding window for L2 inference (kept for backward compat)
         self._config = get_config()
         self._window_size: int = self._config.inference.l2_window_size  # 30
         self._frame_buffer: Deque[dict[str, Any]] = deque(maxlen=self._window_size)
@@ -131,41 +136,54 @@ class UDPServer:
             logger.warning("Failed to parse datagram from %s:%d (%d bytes)", addr[0], addr[1], len(data))
             return
 
-        # --- L1 inference (synchronous, lightweight) -------------------
-        l1_result = self._run_l1(parsed)
-
-        result: dict[str, Any] = {
-            "timestamp": parsed.get("timestamp", time.time()),
-            "hall": parsed.get("hall", []),
-            "imu": parsed.get("imu", []),
-            "l1_gesture_id": l1_result[0],
-            "l1_confidence": l1_result[1],
-            "l2_gesture_id": -1,
-            "l2_confidence": 0.0,
-            "nlp_text": "",
-            "status": "l1_ok",
-        }
-
-        # --- Decide whether to trigger L2 --------------------------------
-        now = time.time() * 1000.0  # ms
-        if (
-            self._config.inference.l2_enabled
-            and l1_result[1] <= self._l2_threshold
-            and (now - self._last_gesture_time) >= self._silence_ms
-            and self._debounce_counter >= self._debounce_frames
-        ):
-            self._frame_buffer.append(parsed)
-            self._debounce_counter = 0
-
-            if len(self._frame_buffer) >= self._window_size:
-                l2_result = self._run_l2()
-                result["l2_gesture_id"] = l2_result[0]
-                result["l2_confidence"] = l2_result[1]
-                result["status"] = "l2_ok"
-                self._frame_buffer.clear()
-                self._last_gesture_time = now
+        # --- Use ConfidenceRouter if available ---
+        if self._router is not None:
+            route = self._router.route(parsed)
+            result: dict[str, Any] = {
+                "timestamp": parsed.get("timestamp", time.time()),
+                "hall": parsed.get("hall", []),
+                "imu": parsed.get("imu", []),
+                "l1_gesture_id": parsed.get("l1_gesture_id", -1),
+                "l1_confidence": parsed.get("l1_confidence", 0.0),
+                "l2_gesture_id": route.gesture_id if route.source == "l2" else -1,
+                "l2_confidence": route.confidence if route.source == "l2" else 0.0,
+                "nlp_text": route.nlp_text,
+                "status": route.status,
+            }
         else:
-            self._debounce_counter += 1
+            # Legacy path (no router)
+            l1_result = self._run_l1(parsed)
+            result = {
+                "timestamp": parsed.get("timestamp", time.time()),
+                "hall": parsed.get("hall", []),
+                "imu": parsed.get("imu", []),
+                "l1_gesture_id": l1_result[0],
+                "l1_confidence": l1_result[1],
+                "l2_gesture_id": -1,
+                "l2_confidence": 0.0,
+                "nlp_text": "",
+                "status": "l1_ok",
+            }
+
+            now = time.time() * 1000.0
+            if (
+                self._config.inference.l2_enabled
+                and l1_result[1] <= self._l2_threshold
+                and (now - self._last_gesture_time) >= self._silence_ms
+                and self._debounce_counter >= self._debounce_frames
+            ):
+                self._frame_buffer.append(parsed)
+                self._debounce_counter = 0
+
+                if len(self._frame_buffer) >= self._window_size:
+                    l2_result = self._run_l2()
+                    result["l2_gesture_id"] = l2_result[0]
+                    result["l2_confidence"] = l2_result[1]
+                    result["status"] = "l2_ok"
+                    self._frame_buffer.clear()
+                    self._last_gesture_time = now
+            else:
+                self._debounce_counter += 1
 
         # --- Broadcast to WebSocket clients -----------------------------
         if self.on_data_callback is not None:

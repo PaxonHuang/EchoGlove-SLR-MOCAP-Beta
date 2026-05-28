@@ -1,6 +1,6 @@
 # PROGRESS_CN.md — 跨会话状态追踪器
 
-**最后更新**: 2026-05-26
+**最后更新**: 2026-05-28
 
 ---
 
@@ -194,39 +194,38 @@ ESP32-S3 通过 USB CDC 连接到 Ubuntu (`/dev/ttyACM0`)。硬件部分接线�
 
 ## 当前工作
 
-**当前**: 硬件已重新组装完毕 — 恢复 Phase 1–4 集成测试（新面包板 + 杜邦线 + TCA9548A）
+**当前**: Phase 5 Python Relay Server 已完成（133/133 测试）。硬件测试暂停 — 用户正在采购新组件（面包板、杜邦线、TCA9548A、TMAG5273 替换件）。明天：Phase 1–4 硬件重新验证。
 
-仿真模式可运行。可以在硬件调试继续并行进行的同时，使用合成数据进行 Edge Impulse 数据收集。
+### Phase 5 完成总结 (2026-05-28)
 
-### 优先级: 路径 A — Edge Impulse MVP (快速验证)
+| 组件 | 测试 | 状态 |
+|------|------|------|
+| Protobuf 解析器 | 19/19 | 完成 |
+| UDP 服务器 | 23/23 | 完成 |
+| WebSocket 管理器 | 15/15 | 完成 |
+| ST-GCN 模型 | 27/27 | 完成 |
+| NLP 语法纠正器 | 15/15 | 完成 |
+| TTS 引擎 | 13/13 | 完成 |
+| ConfidenceRouter | 11/11 | 完成 |
+| 集成测试 | 10/10 | 完成 |
+| **总计** | **133/133** | **全部通过** |
 
-根据 SOP §6.1，ESP32 CSV 输出已兼容 `edge-impulse-data-forwarder`。步骤如下：
+新建文件：
+- `src/confidence_router.py` — L1→L2 置信度驱动路由（从 UDPServer 提取）
+- `tests/test_tts_engine.py` — TTS 引擎测试（通过 sys.modules 注入模拟 edge_tts）
+- `tests/test_confidence_router.py` — 路由逻辑测试
+- `tests/test_integration.py` — FastAPI 应用生命周期测试
 
-1. ✅ 安装 edge-impulse-cli: `npm install -g edge-impulse-cli`
-2. ✅ 固件在仿真模式下输出 CSV（20 个手势类别）
-3. **→ 下一步**: 启动数据转发器: `edge-impulse-data-forwarder --baud-rate 115200 --frequency 100`
-4. 在 Edge Impulse Studio 中收集带标签的手势数据（每个手势 30-60 个样本）
-5. 训练 1D-CNN 分类器（200 epochs, lr=0.001）
-6. 导出为 Arduino 库 → 通过 PlatformIO `lib_deps` 集成
-
-**目标**: 2-3 天内完成 MVP 验证（立即可用仿真数据）
-
-路径 B (PyTorch → TFLite INT8) 推迟至 Phase 3.5 基准测试阶段。
-
-### 并行工作轨道
-
-| 轨道 | 状态 | 阻塞? |
-|-------|--------|-----------|
-| Edge Impulse 数据收集（仿真） | 准备开始 | **否** — 合成数据可用 |
-| 硬件验证（DM40B 万用表） | 需要用户操作 | **否** — 仿真模式解除固件阻塞 |
-| TMAG5273 传感器安装 | 等待到货 | **否** — 在仿真模式下保留 |
+修改文件：
+- `src/main.py` — 添加 `/api/status`、`/api/tts/audio` 端点；将 NLP+TTS+ConfidenceRouter 接入 lifespan
+- `src/udp_server.py` — 接受可选的 `router: ConfidenceRouter` 参数
 
 ### Conda 环境已就绪
 
 | 环境 | Python | PyTorch | 用途 | 中继测试 |
 |------|--------|---------|------|----------|
-| `pytorch21_env` | 3.9.25 | 2.1.0+cpu | ST-GCN 训练、中继开发 | **99/99 ✓** |
-| `tf216` | 3.11.9 | 2.1.0+cpu | TFLite 训练、模型导出 | **99/99 ✓** |
+| `pytorch21_env` | 3.9.25 | 2.1.0+cpu | ST-GCN 训练、中继开发 | **133/133 ✓** |
+| `tf216` | 3.11.9 | 2.1.0+cpu | TFLite 训练、模型导出 | **133/133 ✓** |
 
 ### 阶段状态汇总
 
@@ -237,18 +236,17 @@ ESP32-S3 通过 USB CDC 连接到 Ubuntu (`/dev/ttyACM0`)。硬件部分接线�
 | P2 | 信号处理 | 已完成（代码）— **需用新面包板重新验证** |
 | P3 | L1 边缘推理 — 管道 + TDD | 已完成（42/44 原生测试） |
 | P3.5 | 模型基准测试 | 待定 |
-| P4 | 通信 (BLE/UDP/Protobuf) | 已完成（99/99 中继测试，含 NLP 语法） |
-| P5 | Python Relay + L2 ST-GCN | **← 活跃**（99/99 测试，ST-GCN 已验证） |
+| P4 | 通信 (BLE/UDP/Protobuf) | 已完成（133/133 中继测试） |
+| P5 | Python Relay + L2 ST-GCN + NLP + TTS | **已完成**（133/133 测试） |
 | P6 | Web 渲染 / Unity Pro | 已有脚手架 |
 | P7 | 集成测试 | 待定 |
 
 ### 下一步（按顺序）
 
-1. **I2C 扫描**（新面包板）: `pio run -t upload && pio device monitor` — 预期 0x70, 0x4B, 0x22
-2. **传感器验证**: 确认霍尔传感器 (Ch0–4) 和 BNO085 (Ch5) 读取真实数据
-3. **CSV 输出**: 确认串口 Edge Impulse 兼容格式
-4. **Edge Impulse 数据收集**（路径 A MVP）
-5. **Phase 5 继续**: NLP/TTS 测试、模型训练管道
+1. **硬件重新验证**（明天）：新面包板 I2C 扫描 → 传感器验证 → CSV 输出
+2. **Edge Impulse 数据收集**（路径 A MVP）：训练 L1 1D-CNN 模型
+3. **模型导出**：TFLite → 集成到固件
+4. **Phase 6**：React + R3F 前端（WebSocket 消费者 + 3D 手部骨架）
 ---
 
 ## 第三阶段: L1 边缘推理 — TDD 完成 (2026-05-22)
