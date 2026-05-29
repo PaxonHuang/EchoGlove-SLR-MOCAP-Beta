@@ -51,7 +51,21 @@
       "Bash(/home/paxon/miniconda3/envs/tf_env/bin/pip cache *)",
       "Bash(/home/paxon/miniconda3/envs/tf_env/bin/python -c \"import torch; print\\(torch.__version__, torch.cuda.is_available\\(\\)\\)\")",
       "Bash(/home/paxon/miniconda3/envs/tf_env/bin/pip list *)",
-      "Bash(esptool.py --chip esp32s3 --port /dev/ttyACM0 erase_flash)"
+      "Bash(esptool.py --chip esp32s3 --port /dev/ttyACM0 erase_flash)",
+      "Bash(npx vite *)",
+      "Bash(npx playwright *)",
+      "Read(//tmp/**)",
+      "Bash(npm init *)",
+      "Bash(npm install *)",
+      "Bash(node -e ' *)",
+      "Bash(npx chrome-devtools-mcp@latest --help)",
+      "Bash(npx chrome-devtools-mcp@latest navigate_page --url \"http://localhost:5173\")",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_console_messages",
+      "mcp__plugin_playwright_playwright__browser_snapshot",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot",
+      "Bash(xxd)"
     ]
   }
 }

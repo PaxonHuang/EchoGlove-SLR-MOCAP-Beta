@@ -1,0 +1,38 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: 🧤
+      - generic [ref=e7]:
+        - heading "Edge AI 手语手套" [level=1] [ref=e8]
+        - paragraph [ref=e9]: Sign Language Recognition V3
+    - generic [ref=e10]:
+      - generic [ref=e11]:
+        - generic [ref=e12]: FPS
+        - generic [ref=e13]: "0"
+      - generic [ref=e18]: 未连接
+      - button "Settings" [ref=e19]:
+        - img [ref=e20]
+  - navigation [ref=e23]:
+    - button "仪表盘" [ref=e24]:
+      - img [ref=e25]
+      - text: 仪表盘
+    - button "手语教学" [active] [ref=e27]:
+      - img [ref=e28]
+      - text: 手语教学
+  - main [ref=e30]:
+    - generic:
+      - generic:
+        - button "手势列表" [ref=e177]:
+          - img [ref=e178]
+          - text: 手势列表
+        - generic:
+          - generic:
+            - generic: 拇指
+          - generic:
+            - generic: 食指
+          - generic:
+            - generic: 中指
+          - generic:
+            - generic: 无名指
+          - generic:
+            - generic: 小指
