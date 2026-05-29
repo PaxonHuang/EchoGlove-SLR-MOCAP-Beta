@@ -66,3 +66,122 @@ body {
 .animate-fade-in {
   animation: fade-in 0.3s ease-out;
 }
+
+/* ── Sign Demo specific ── */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── Sign Subtitle animation ── */
+@keyframes subtitle-pop {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(16px) scale(0.88);
+  }
+  60% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-3px) scale(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+@keyframes subtitle-glow {
+  0%, 100% {
+    box-shadow:
+      0 4px 32px rgba(59, 130, 246, 0.3),
+      0 0 60px rgba(59, 130, 246, 0.1),
+      0 0 0 1px rgba(59, 130, 246, 0.15);
+  }
+  50% {
+    box-shadow:
+      0 4px 40px rgba(59, 130, 246, 0.45),
+      0 0 80px rgba(59, 130, 246, 0.15),
+      0 0 0 1px rgba(59, 130, 246, 0.25);
+  }
+}
+
+@keyframes subtitle-fade-out {
+  from {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px) scale(0.95);
+  }
+}
+
+.sign-subtitle-container {
+  position: absolute;
+  top: 6%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  pointer-events: none;
+  animation: subtitle-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.sign-subtitle-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 2px solid #3b82f6;
+  border-radius: 14px;
+  padding: 16px 36px;
+  backdrop-filter: blur(16px);
+  animation: subtitle-glow 2s ease-in-out infinite;
+}
+
+.sign-subtitle-char {
+  font-size: 40px;
+  font-weight: 800;
+  color: #f1f5f9;
+  letter-spacing: 3px;
+  line-height: 1;
+  text-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+.sign-subtitle-en {
+  font-size: 16px;
+  font-weight: 600;
+  color: #93c5fd;
+  letter-spacing: 1.5px;
+}
+
+.sign-subtitle-cat {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 6px;
+}
+
+.sign-subtitle-progress {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-left: 4px;
+}
+
+.sign-subtitle-desc {
+  text-align: center;
+  font-size: 13px;
+  color: #94a3b8;
+  margin-top: 10px;
+  max-width: 400px;
+  letter-spacing: 0.5px;
+}
+
+/* ── Bottom drawer (overlay) ── */
+.demo-drawer {
+  border-top: 1px solid #334155;
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(16px);
+  max-height: 28vh;
+  overflow-y: auto;
+}

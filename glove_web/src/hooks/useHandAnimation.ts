@@ -11,7 +11,7 @@ import type { HandPose, Keypoint3D } from '../types';
 
 // ── Rest Pose (open hand, normalized 3D coordinates) ──
 // Approximate hand model: palm ~3 units wide, fingers extend ~2.5 units
-function getRestPose(): Keypoint3D[] {
+export function getRestPose(): Keypoint3D[] {
   return [
     // 0: WRIST
     { x: 0, y: 0, z: 0 },
