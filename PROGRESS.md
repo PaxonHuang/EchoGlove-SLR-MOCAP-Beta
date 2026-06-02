@@ -4,6 +4,31 @@
 
 ---
 
+## V5.0 DualGloveFlex Migration (2026-06-02)
+
+**Status**: Phase 0 complete, Phase 1 in progress
+**Branch**: V5-DualGloveFlex
+**Design Spec**: `docs/superpowers/specs/2026-06-01-v5-dual-glove-flex-design.md`
+**Plan**: `docs/superpowers/plans/2026-06-01-v5-dual-glove-flex.md`
+
+### Phase 0: Branch & Cleanup ✅
+- [x] Created V5-DualGloveFlex branch
+- [x] Deleted TMG5273.h, TCA9548A.h/.cpp, test directories
+- [x] Deleted old protobuf generated files
+- [x] Updated CLAUDE.md with V5 constants
+- [x] Verified 133 relay tests collect without errors
+
+### Phase 1: Simulation + Data Structures — IN PROGRESS
+- [ ] 1.1 Data structures rewrite (data_structures.h)
+- [ ] 1.2 Protobuf v5 schema
+- [ ] 1.3 Simulation mode (SensorManager)
+- [ ] 1.4 FlexManager stub
+- [ ] 1.5 ESP-NOW transmitter stub
+- [ ] 1.6 CSV output validation
+- [ ] 1.7 Phase 1 integration check
+
+---
+
 ## MCP Plugin Status (Updated 2026-05-15)
 
 | Plugin          | Status  | Notes                                                                                                                  |

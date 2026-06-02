@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## V5.0 DualGloveFlex Migration (2026-06-01)
+- Branch: V5-DualGloveFlex
+- Design Spec: docs/superpowers/specs/2026-06-01-v5-dual-glove-flex-design.md
+- Implementation Plan: docs/superpowers/plans/2026-06-01-v5-dual-glove-flex.md
+- Architecture: 3x ESP32-S3, BNO085 + 5x Flex + 2x ADS1115, 3-tier inference
+
 ---
 
 ## Workflow Rule: Execute First, Explore Second
@@ -12,13 +18,13 @@ When I provide detailed specs or explicit instructions for project initializatio
 
 ## Project Context
 
-This is an ESP32-S3 hand sign recognition glove project using PlatformIO. Key components: BNO085 IMU, TMAG5273 hall effect sensors. Architecture follows a phased HAL/driver development approach (Phase 1: HAL + basic drivers, Phase 2: signal processing, Phase 3: gesture recognition). When continuing work, check previous session progress before restarting from scratch.
+This is an ESP32-S3 hand sign recognition glove project using PlatformIO (V5.0 DualGloveFlex). Key components: BNO085 IMU, 5x flex sensors (via ADS1115), dual-hand support. Architecture follows a 3-tier inference approach (L1 edge, L2 relay, L3 rendering). When continuing work, check previous session progress before restarting from scratch.
 
 ---
 
 ## Project Overview
 
-**Edge-AI Data Glove V3**: Dual-tier inference system for real-time sign language translation and 3D hand animation. 
+**Edge-AI Data Glove V5**: 3-tier inference system for real-time sign language translation and 3D hand animation, with dual-hand support.
 
 **Architecture**:
 - **Layer 1 (Edge)**: ESP32-S3 with 1D-CNN+Attention L1 model (<3ms latency)
@@ -26,8 +32,15 @@ This is an ESP32-S3 hand sign recognition glove project using PlatformIO. Key co
 - **Layer 3a (Web MVP)**: React 18 + Vite + R3F (3D hand skeleton)
 - **Layer 3b (Unity Pro)**: Unity 2022 LTS + XR Hands + ms-MANO
 
+**V5 Constants**:
+- `NUM_FLEX_SENSORS=5`
+- `IMU_FEATURE_COUNT=6` (3 euler + 3 gyro)
+- `SINGLE_HAND_FEATURES=11`
+- `DUAL_HAND_FEATURES=28`
+- `NUM_CLASSES=46`
+
 **Key Decisions**:
-- **No Rust/Tauri**: V3 uses pure Web (React + R3F), no desktop framework
+- **No Rust/Tauri**: V5 uses pure Web (React + R3F), no desktop framework
 - **Python Relay**: Unified hub for UDP→WebSocket conversion + L2 inference
 - **Model Hot-Switch**: BaseModel interface + YAML config switching
 - **BLE for Provisioning Only**: Frontend uses WiFi→Relay→WebSocket
@@ -189,7 +202,8 @@ ESP32-S3                    Python Relay              Web Frontend
 
 - **MCU**: ESP32-S3-DevKitC-1 N16R8 (8MB Flash + 8MB PSRAM)
 - **I2C**: GPIO 8 (SDA), GPIO 9 (SCL), 400kHz
-- **Sensors**: 5× TMAG5273 (via Adafruit TCA9548A mux), 1× GY-BNO085 (address 0x4B)
+- **Sensors**: BNO085 IMU (address 0x4B), 5x flex sensors (via 2x ADS1115 ADC)
+- **V5 removed**: TMAG5273, TCA9548A [REMOVED in V5]
 
 ---
 
@@ -211,14 +225,15 @@ ESP32-S3                    Python Relay              Web Frontend
 | Phase | Name | Status |
 |-------|------|--------|
 | P0 | Project init (PlatformIO + React + FastAPI) | Done |
-| P1 | HAL & drivers (TMAG5273, BNO085, TCA9548A) | Done |
+| P1 | HAL & drivers (TMAG5273 [REMOVED in V5], BNO085, TCA9548A [REMOVED in V5]) | Done |
 | P2 | Signal processing (Kalman filter, normalization, sliding window) | Done |
-| P3 | L1 Edge Inference — Edge Impulse MVP (path A) | **← ACTIVE** |
+| P3 | L1 Edge Inference — Edge Impulse MVP (path A) | Done |
 | P3.5 | Model Benchmark comparison | Pending |
 | P4 | Communication (BLE provisioning + WiFi UDP) | Pending |
 | P5 | Python Relay + L2 ST-GCN + NLP + TTS | Pending |
 | P6 | Web rendering (React + R3F) / Unity Pro | Pending |
 | P7 | Integration testing | Pending |
+| V5 | DualGloveFlex migration (flex sensors, dual-hand, 3-tier) | **← ACTIVE** |
 
 **Current task (P3 Path A)**: Use `edge-impulse-data-forwarder` with serial CSV output → train 1D-CNN in Edge Impulse → export Arduino library → integrate into firmware. See `PROGRESS.md` for details.
 
@@ -243,7 +258,7 @@ Invoke with `/agent esp32-firmware-engineer` for firmware tasks.
 
 ## Project Dependencies
 
-- TMAG5273 and BNO085 drivers are LOCAL drivers included in the firmware repo, NOT PlatformIO registry libraries. Do not search PlatformIO registry for them.
+- BNO085 driver is a LOCAL driver included in the firmware repo, NOT a PlatformIO registry library. Do not search PlatformIO registry for it.
 - For any dependency, check the project's existing `lib/` directory first before assuming it needs to be installed from a registry.
 
 ---
@@ -257,7 +272,7 @@ After modifying any source file in this project, always run `pio run` to verify 
 ## PlatformIO Dependency Notes
 
 - **lib_deps syntax**: Use `owner/libname @ version` (space before @), NOT `owner/libname=@version`
-- **TMAG5273**: Local driver in `lib/Sensors/TMG5273.h/.cpp` — do NOT add SparkFun TMAG5273 library to lib_deps
+- **TMAG5273**: Local driver in `lib/Sensors/TMG5273.h/.cpp` — do NOT add SparkFun TMAG5273 library to lib_deps [REMOVED in V5]
 - **TFLite Micro**: Use `tanakamasayuki/TensorFlowLite_ESP32` (ESP32 optimized)
 
 ## Library Architecture
@@ -265,7 +280,7 @@ After modifying any source file in this project, always run `pio run` to verify 
 ### Firmware (`glove_firmware/lib/`)
 | Directory | Purpose |
 |-----------|---------|
-| `Sensors/` | TMAG5273 driver, TCA9548A mux, SensorManager |
+| `Sensors/` | BNO085 IMU driver, ADS1115 ADC, FlexSensorManager |
 | `Models/` | BaseModel interface, TFLiteModel, ModelRegistry |
 | `Comms/` | BLEManager, UDPTransmitter, Protobuf |
 | `Filters/` | Kalman filter implementations |

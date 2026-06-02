@@ -24,19 +24,15 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10glove_data.proto\x12\ndata_glove\"\xc2\x01\n\tGloveData\x12\x11\n\ttimestamp\x18\x01 \x01(\r\x12\x19\n\rhall_features\x18\x02 \x03(\x02\x42\x02\x10\x01\x12\x18\n\x0cimu_features\x18\x03 \x03(\x02\x42\x02\x10\x01\x12\x19\n\rflex_features\x18\x04 \x03(\x02\x42\x02\x10\x01\x12\x15\n\rl1_gesture_id\x18\x05 \x01(\r\x12\x15\n\rl1_confidence\x18\x06 \x01(\x02\x12\x14\n\x0cl2_requested\x18\x07 \x01(\x08\x12\x0e\n\x06status\x18\x08 \x01(\tb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10glove_data.proto\x12\x0c\x65\x63hoglove_v5\"\xdf\x01\n\tGloveData\x12\x0f\n\x07version\x18\x01 \x01(\r\x12\x11\n\ttimestamp\x18\x02 \x01(\r\x12\x0f\n\x07hand_id\x18\x03 \x01(\r\x12\x0c\n\x04\x66lex\x18\x04 \x03(\x02\x12\x0b\n\x03imu\x18\x05 \x03(\x02\x12\x15\n\rl1_gesture_id\x18\x06 \x01(\r\x12\x15\n\rl1_confidence\x18\x07 \x01(\x02\x12\x10\n\x08relative\x18\x08 \x03(\x02\x12\x18\n\x10tier2_gesture_id\x18\t \x01(\r\x12\x18\n\x10tier2_confidence\x18\n \x01(\x02\x12\x0e\n\x06status\x18\x0b \x01(\t\"\x9c\x01\n\x0eReceiverPacket\x12\x0f\n\x07version\x18\x01 \x01(\r\x12\x0f\n\x07tick_id\x18\x02 \x01(\r\x12%\n\x04left\x18\x03 \x01(\x0b\x32\x17.echoglove_v5.GloveData\x12&\n\x05right\x18\x04 \x01(\x0b\x32\x17.echoglove_v5.GloveData\x12\x19\n\x11relative_features\x18\x05 \x03(\x02\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'glove_data_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_GLOVEDATA'].fields_by_name['hall_features']._loaded_options = None
-  _globals['_GLOVEDATA'].fields_by_name['hall_features']._serialized_options = b'\020\001'
-  _globals['_GLOVEDATA'].fields_by_name['imu_features']._loaded_options = None
-  _globals['_GLOVEDATA'].fields_by_name['imu_features']._serialized_options = b'\020\001'
-  _globals['_GLOVEDATA'].fields_by_name['flex_features']._loaded_options = None
-  _globals['_GLOVEDATA'].fields_by_name['flex_features']._serialized_options = b'\020\001'
-  _globals['_GLOVEDATA']._serialized_start=33
-  _globals['_GLOVEDATA']._serialized_end=227
+  _globals['_GLOVEDATA']._serialized_start=35
+  _globals['_GLOVEDATA']._serialized_end=258
+  _globals['_RECEIVERPACKET']._serialized_start=261
+  _globals['_RECEIVERPACKET']._serialized_end=417
 # @@protoc_insertion_point(module_scope)

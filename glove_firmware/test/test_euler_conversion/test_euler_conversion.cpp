@@ -1,5 +1,5 @@
 /* =============================================================================
- * EdgeAI Data Glove V3 — Euler Conversion & Signal Processing Tests
+ * EdgeAI Data Glove V5 — Euler Conversion & Signal Processing Tests
  * =============================================================================
  * Pure-computation tests that run without hardware.
  * Tests quaternion→Euler conversion, SlidingWindow, FeatureNormalizer.

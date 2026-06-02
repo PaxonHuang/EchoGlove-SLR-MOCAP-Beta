@@ -1,5 +1,5 @@
 /* =============================================================================
- * EdgeAI Data Glove V3 — Inference Pipeline Tests (TDD RED Phase)
+ * EdgeAI Data Glove V5 — Inference Pipeline Tests (TDD RED Phase)
  * =============================================================================
  * Tests for runInferencePipeline() — the glue between SlidingWindow,
  * BaseModel, and InferenceTrigger.
@@ -48,8 +48,8 @@ static void fillWindow(SlidingWindow* w, int gesture_id) {
     float features[FEATURE_COUNT];
     for (int f = 0; f < WINDOW_SIZE; f++) {
         memset(features, 0, sizeof(features));
-        // Set hall_xyz pattern based on gesture
-        for (int i = 0; i < HALL_FEATURE_COUNT; i++) {
+        // Set flex pattern based on gesture
+        for (int i = 0; i < NUM_FLEX_SENSORS; i++) {
             features[i] = (gesture_id * 0.1f) + (i * 0.01f);
         }
         w->push(features);

@@ -1,48 +1,24 @@
 syntax = "proto3";
-
-/* =============================================================================
- * EdgeAI Data Glove V3 — Protobuf Wire Schema (Nanopb)
- * =============================================================================
- * Defines the serialized packet sent over UDP and BLE.
- *
- * This is the SINGLE SOURCE OF TRUTH for the wire format.
- * Firmware (Nanopb) and Relay (Python protobuf) both derive from this file.
- *
- * Design Notes:
- *   - repeated fields use [packed=true] for space efficiency
- *   - float arrays are used (not nested messages) for zero-copy with TFLite
- *   - Status is a string for human readability
- *   - timestamp is uint32 microseconds (wraps at ~4294 seconds ≈ 71 min)
- * =============================================================================
- */
-
-package data_glove;
+package echoglove_v5;
 
 message GloveData {
-    /// Monotonic timestamp in microseconds (mod 2^32)
-    uint32 timestamp        = 1;
+    uint32 version = 1;
+    uint32 timestamp = 2;
+    uint32 hand_id = 3;          // 0=left, 1=right
+    repeated float flex = 4;     // [5]
+    repeated float imu = 5;      // [6] euler[3]+gyro[3]
+    uint32 l1_gesture_id = 6;
+    float l1_confidence = 7;
+    repeated float relative = 8; // [6] filled by receiver
+    uint32 tier2_gesture_id = 9;
+    float tier2_confidence = 10;
+    string status = 11;
+}
 
-    /// 3D Hall sensor features: 15 floats (5 sensors × 3 axes XYZ)
-    /// Order: [thumb_x, thumb_y, thumb_z, index_x, ..., pinky_z]
-    repeated float hall_features    = 2 [packed = true];
-
-    /// IMU features: 6 floats (3 euler + 3 gyro)
-    /// Order: [roll, pitch, yaw, gyro_x, gyro_y, gyro_z]
-    repeated float imu_features     = 3 [packed = true];
-
-    /// Flex sensor features: 5 floats (reserved for V3.1)
-    repeated float flex_features    = 4 [packed = true];
-
-    /// L1 on-device gesture prediction (class index, 0-based)
-    uint32 l1_gesture_id   = 5;
-
-    /// L1 prediction confidence (0.0 – 1.0, softmax output)
-    float l1_confidence    = 6;
-
-    /// True if L2 (cloud/edge server) inference is requested for this frame
-    bool l2_requested      = 7;
-
-    /// System status string for debugging
-    /// Values: "STREAMING" | "MODEL_SWITCHING" | "ERROR" | "CALIBRATING" | "IDLE"
-    string status          = 8;
+message ReceiverPacket {
+    uint32 version = 1;
+    uint32 tick_id = 2;
+    GloveData left = 3;
+    GloveData right = 4;
+    repeated float relative_features = 5; // [6]
 }

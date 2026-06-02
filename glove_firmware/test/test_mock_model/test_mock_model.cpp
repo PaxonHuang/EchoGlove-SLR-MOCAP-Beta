@@ -1,12 +1,12 @@
 /* =============================================================================
- * EdgeAI Data Glove V3 — MockModel Tests (TDD RED Phase)
+ * EdgeAI Data Glove V5 — MockModel Tests (TDD RED Phase)
  * =============================================================================
  * Tests for MockModel — a configurable BaseModel implementation for
  * pipeline testing without real TFLite model data.
  *
  * MockModel features:
  *   - Configurable output gesture ID + confidence
- *   - preprocess() extracts 21 features from SensorData window
+ *   - preprocess() extracts 11 features from SensorData window
  *   - infer() produces configurable logits
  *   - postprocess() applies softmax + argmax
  *   - Works in native test environment (no Arduino/PSRAM needed)
@@ -83,8 +83,8 @@ void test_preprocess_extracts_features(void) {
     SensorData frames[WINDOW_SIZE];
     for (int i = 0; i < WINDOW_SIZE; i++) {
         frames[i].zero();
-        // Set hall_xyz[0] = i * 0.1f (distinct per frame)
-        frames[i].hall_xyz[0] = i * 0.1f;
+        // Set flex[0] = i * 0.1f (distinct per frame)
+        frames[i].flex[0] = i * 0.1f;
         // Set euler[0] = i * 2.0f
         frames[i].euler[0] = i * 2.0f;
     }
@@ -94,13 +94,13 @@ void test_preprocess_extracts_features(void) {
 
     TEST_ASSERT_EQUAL(WINDOW_SIZE * FEATURE_COUNT, written);
 
-    // Verify first frame: hall_xyz[0] = 0.0, euler[0] = 0.0
+    // Verify first frame: flex[0] = 0.0, euler[0] = 0.0
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, input[0]);
 
-    // Verify frame 5: hall_xyz[0] = 0.5, euler[0] = 10.0
+    // Verify frame 5: flex[0] = 0.5, euler[0] = 10.0
     int frame5_start = 5 * FEATURE_COUNT;
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.5f, input[frame5_start]);
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 10.0f, input[frame5_start + HALL_FEATURE_COUNT]);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 10.0f, input[frame5_start + NUM_FLEX_SENSORS]);
 }
 
 // =============================================================================

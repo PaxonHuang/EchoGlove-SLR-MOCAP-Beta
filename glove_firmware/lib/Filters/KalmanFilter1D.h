@@ -24,6 +24,7 @@
 
 #include <cmath>
 #include <algorithm>
+#include <vector>
 
 template <typename T = float>
 class KalmanFilter1D {
@@ -41,12 +42,36 @@ public:
      *                          Larger R → filter trusts sensor less, more smoothing.
      *                          Typical: 0.001 – 0.1
      */
+    /**
+     * @brief Single-channel constructor (original API).
+     */
     explicit KalmanFilter1D(T process_noise = T(0.001), T measurement_noise = T(0.01))
         : Q(process_noise), R(measurement_noise),
           x(T(0)),       // State estimate
           P(T(1)),       // Estimate error covariance
           K(T(0)),       // Kalman gain
-          _initialized(false) {}
+          _initialized(false),
+          _num_channels(0) {}
+
+    /**
+     * @brief Multi-channel constructor.
+     *
+     * Creates N independent Kalman filters sharing the same Q/R tuning.
+     * Use the batch update(const T* input, T* output) method.
+     *
+     * @param num_channels   Number of independent signal channels.
+     * @param process_noise  Q — process noise variance (shared across channels).
+     * @param measurement_noise R — measurement noise variance (shared across channels).
+     */
+    explicit KalmanFilter1D(int num_channels,
+                            T process_noise = T(0.001),
+                            T measurement_noise = T(0.01))
+        : Q(process_noise), R(measurement_noise),
+          x(T(0)), P(T(1)), K(T(0)), _initialized(false),
+          _num_channels(static_cast<size_t>(num_channels)),
+          _mc_state(static_cast<size_t>(num_channels), T(0)),
+          _mc_cov(static_cast<size_t>(num_channels), T(1)),
+          _mc_init(static_cast<size_t>(num_channels), false) {}
 
     // =========================================================================
     // Core Filter Operation
@@ -89,6 +114,34 @@ public:
         return x;
     }
 
+    /**
+     * @brief Run one Kalman update cycle on all channels (multi-channel mode).
+     *
+     * Each channel is an independent 1D Kalman filter sharing the same Q/R.
+     * On the first call per channel, the filter seeds itself from the measurement.
+     *
+     * @param input   Pointer to array of num_channels raw measurements.
+     * @param output  Pointer to array of num_channels filtered estimates (written).
+     */
+    void update(const T* input, T* output) {
+        for (size_t i = 0; i < _num_channels; ++i) {
+            if (!_mc_init[i]) {
+                _mc_state[i] = input[i];
+                _mc_cov[i]  = R;
+                _mc_init[i] = true;
+                output[i]   = _mc_state[i];
+                continue;
+            }
+            // Prediction
+            T P_pred = _mc_cov[i] + Q;
+            // Update
+            T k = P_pred / (P_pred + R);
+            _mc_state[i] = _mc_state[i] + k * (input[i] - _mc_state[i]);
+            _mc_cov[i]   = (T(1) - k) * P_pred;
+            output[i]    = _mc_state[i];
+        }
+    }
+
     // =========================================================================
     // Accessors
     // =========================================================================
@@ -104,6 +157,9 @@ public:
 
     /** @return true if the filter has been seeded with at least one measurement. */
     bool isInitialized() const { return _initialized; }
+
+    /** @return Number of channels (0 = single-channel mode). */
+    size_t numChannels() const { return _num_channels; }
 
     // =========================================================================
     // Tuning
@@ -128,6 +184,10 @@ public:
         P = T(1);
         K = T(0);
         _initialized = false;
+        // Also reset multi-channel state if applicable
+        std::fill(_mc_state.begin(), _mc_state.end(), T(0));
+        std::fill(_mc_cov.begin(),   _mc_cov.end(),   T(1));
+        std::fill(_mc_init.begin(),  _mc_init.end(),  false);
     }
 
     /**
@@ -149,6 +209,12 @@ private:
     T P;                  ///< Estimate error covariance
     T K;                  ///< Kalman gain (stored for diagnostics)
     bool _initialized;    ///< First-measurement guard
+
+    // --- Multi-channel state (empty vectors in single-channel mode) ---
+    size_t        _num_channels;  ///< 0 = single-channel, >0 = multi-channel
+    std::vector<T>    _mc_state;  ///< Per-channel state estimates
+    std::vector<T>    _mc_cov;    ///< Per-channel error covariances
+    std::vector<bool> _mc_init;   ///< Per-channel initialization flags
 };
 
 #endif // KALMAN_FILTER_1D_H
