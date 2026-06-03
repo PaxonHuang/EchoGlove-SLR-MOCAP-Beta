@@ -1,6 +1,82 @@
 # PROGRESS_CN.md — 跨会话状态追踪器
 
-**最后更新**: 2026-05-28
+**最后更新**: 2026-06-03
+
+---
+
+## V5.0 DualGloveFlex 迁移 (2026-06-02)
+
+**状态**: Phase 0-4 完成 ✅, Phase 5-7 待定
+**分支**: V5-DualGloveFlex
+**设计文档**: `docs/superpowers/specs/2026-06-01-v5-dual-glove-flex-design.md`
+**计划文档**: `docs/superpowers/plans/2026-06-01-v5-dual-glove-flex.md`
+
+### 测试汇总
+
+| 组件 | 测试数 | 状态 |
+|------|--------|------|
+| 固件（native） | 64 | ✅ 全部通过 |
+| 接收器（native） | 12 | ✅ 全部通过 |
+| 中继（pytest） | 70 | ✅ 全部通过 |
+| 中继集成测试 | 10 | ❌ 被阻塞（V3 udp_server.py） |
+| **总计** | **156** | **146 通过，10 被阻塞** |
+
+### Phase 0: 分支创建与清理 ✅
+- [x] 创建 V5-DualGloveFlex 分支
+- [x] 删除 TMG5273.h, TCA9548A.h/.cpp, test 目录
+- [x] 删除旧的 protobuf 生成文件
+- [x] 使用 V5 常量更新 CLAUDE.md
+
+### Phase 1: 仿真模式 + 数据结构 ✅
+- [x] 数据结构重写 (data_structures.h) — HandID, GlovePacket 69B, 28-dim
+- [x] Protobuf v5 schema (glove_data.proto)
+- [x] 仿真模式 (SensorManager) — 20 种手势签名
+- [x] FlexManager — 5 点校准，仿真模式
+- [x] ESP-NOW 发送器 (ESPNOWTransmitter)
+- [x] CSV 输出验证 (test_csv_format.py)
+- [x] 64 固件测试 + 7 中继测试
+
+### Phase 2: 中继管道 ✅
+- [x] Tier1CNN — 24K 参数，SE-注意力
+- [x] GatedBiCrossAttn — 20K 参数，sigmoid 门控
+- [x] STGCNModel — 12 节点 (22 边) / 42 节点 (88 边)
+- [x] ConfidenceRouter — 3 层融合，5 帧热切换
+- [x] ProtobufParser V5
+- [x] 训练脚本: train_tier1/2/3.py
+- [x] 70 中继测试
+
+### Phase 3: 接收器固件 ✅
+- [x] ESPNOWReceiver — 数据包验证 + CRC16
+- [x] FramePairer — 左/右 tick_id 匹配
+- [x] RelativeFeatures — 6 维: ΔEuler[3] + ΔQuatDist[1] + ΔGyroNorm[1] + ΔGyroAxis[1]
+- [x] main.cpp — Arduino 主循环
+- [x] 12 接收器测试
+
+### Phase 4: 传感器层 ✅
+- [x] ADS1115Manager — 双 ADC (0x48 + 0x49)，仿真模式
+- [x] FlexManager — 5 点分段线性校准，600 帧预热
+- [x] KalmanFilter1D — 11 通道批量滤波
+- [x] SensorManager — 扁平 I2C，BNO085 + 2×ADS1115
+
+### Phase 5: 数据采集 + 模型训练 ⏳
+- [ ] 校准工具 (scripts/calibrate.py)
+- [ ] 更新 data_collector.py 支持双手 CSV
+- [ ] 采集 46 类手势数据（双手）
+- [ ] 训练 Tier1/Tier2/Tier3 模型
+- [ ] TFLite int8 导出
+- [ ] 精度: Tier1 >80%, Tier2 >85%, Tier3 >90%
+
+### Phase 6: 前端集成 ⏳
+- [ ] React3F 双手渲染
+- [ ] Unity XR Hands 项目搭建
+- [ ] WebSocket 数据集成
+- [ ] 5-DoF → 26 关节映射
+
+### Phase 7: 端到端集成 ⏳
+- [ ] 全链路测试（手套 → 接收器 → 中继 → 前端）
+- [ ] 热切换测试（Tier1 → Tier2 → Tier3）
+- [ ] 延迟: E2E < 100ms
+- [ ] 稳定性: 30 分钟连续运行
 
 ---
 
