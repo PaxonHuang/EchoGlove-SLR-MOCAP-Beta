@@ -1,31 +1,45 @@
 # PROGRESS.md — Cross-Session State Tracker
 
-**Last updated**: 2026-05-28
+**Last updated**: 2026-06-03
 
 ---
 
-## V5.0 DualGloveFlex Migration (2026-06-02)
+## V5.0 DualGloveFlex Migration
 
-**Status**: Phase 0 complete, Phase 1 in progress
+**Status**: Phase 0-6 complete ✅, Phase 5/7 need hardware
 **Branch**: V5-DualGloveFlex
 **Design Spec**: `docs/superpowers/specs/2026-06-01-v5-dual-glove-flex-design.md`
 **Plan**: `docs/superpowers/plans/2026-06-01-v5-dual-glove-flex.md`
 
-### Phase 0: Branch & Cleanup ✅
-- [x] Created V5-DualGloveFlex branch
-- [x] Deleted TMG5273.h, TCA9548A.h/.cpp, test directories
-- [x] Deleted old protobuf generated files
-- [x] Updated CLAUDE.md with V5 constants
-- [x] Verified 133 relay tests collect without errors
+### Test Summary
 
-### Phase 1: Simulation + Data Structures — IN PROGRESS
-- [ ] 1.1 Data structures rewrite (data_structures.h)
-- [ ] 1.2 Protobuf v5 schema
-- [ ] 1.3 Simulation mode (SensorManager)
-- [ ] 1.4 FlexManager stub
-- [ ] 1.5 ESP-NOW transmitter stub
-- [ ] 1.6 CSV output validation
-- [ ] 1.7 Phase 1 integration check
+| Component | Tests | Status |
+|-----------|-------|--------|
+| Firmware (native) | 64 | ✅ |
+| Receiver (native) | 12 | ✅ |
+| Relay (pytest) | 80 | ✅ |
+| **Total** | **156** | **✅ All pass** |
+
+### Phase Status
+
+| Phase | Status | Description |
+|-------|--------|-------------|
+| 0 | ✅ | Branch setup, V3 Hall/MUX cleanup |
+| 1 | ✅ | Simulation + data structures |
+| 2 | ✅ | Relay pipeline (Tier1CNN, CrossAttn, STGCN, Router) |
+| 3 | ✅ | Receiver firmware (ESP-NOW, FramePairer, RelativeFeatures) |
+| 4 | ✅ | Sensor layer (ADS1115, FlexManager, Kalman) |
+| 5 | ⏳ | Data collection + model training (needs hardware) |
+| 6 | ✅ | Frontend V5 dual-hand (types, stores, hooks, components) |
+| 7 | ⏳ | E2E integration (needs hardware) |
+
+### Cleanup Done (2026-06-03)
+- Removed 14 V3 files (Hall/MUX/BLE/UDP/temp)
+- Archived V3/V4 docs to `docs/archive/v3/`
+- Updated `.gitignore` (playwright-mcp, skills-lock, generated pb2)
+- Migrated `udp_server.py` + `main.py` to V5
+- Created `scripts/calibrate.py` + updated `data_collector.py`
+- Frontend: V5 types, dual-hand rendering, per-hand gesture display
 
 ---
 
