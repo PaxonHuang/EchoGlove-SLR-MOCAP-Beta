@@ -3,12 +3,12 @@ import { useSensorStore } from '../stores/useSensorStore';
 import { useGestureStore } from '../stores/useGestureStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { DEFAULT_WS_PORT, MAX_RECONNECT_RETRIES, INITIAL_RECONNECT_DELAY } from '../utils/constants';
-import type { SensorMessage, ConnectionStatus } from '../types';
+import type { RelayMessage, ConnectionStatus } from '../types';
 
 interface UseWebSocketReturn {
   status: ConnectionStatus;
   reconnect: () => void;
-  lastMessage: SensorMessage | null;
+  lastMessage: RelayMessage | null;
 }
 
 export function useWebSocket(): UseWebSocketReturn {
@@ -18,18 +18,16 @@ export function useWebSocket(): UseWebSocketReturn {
   const mountedRef = useRef(true);
 
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
-  const [lastMessage, setLastMessage] = useState<SensorMessage | null>(null);
+  const [lastMessage, setLastMessage] = useState<RelayMessage | null>(null);
 
   const relayHost = useSettingsStore((s) => s.relayHost);
   const updateFromRelay = useSensorStore((s) => s.updateFromRelay);
   const updateGesture = useGestureStore((s) => s.updateGesture);
 
-  // ── Compute WebSocket URL ──
   const getWsUrl = useCallback((): string => {
     return `ws://${relayHost}:${DEFAULT_WS_PORT}`;
   }, [relayHost]);
 
-  // ── Cleanup helper ──
   const cleanup = useCallback(() => {
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
@@ -48,10 +46,8 @@ export function useWebSocket(): UseWebSocketReturn {
     }
   }, []);
 
-  // ── Connect / Reconnect ──
   const connect = useCallback(() => {
     cleanup();
-
     if (!mountedRef.current) return;
 
     setStatus('connecting');
@@ -70,12 +66,11 @@ export function useWebSocket(): UseWebSocketReturn {
         if (!mountedRef.current) return;
 
         try {
-          const data: SensorMessage = JSON.parse(event.data as string);
+          const data: RelayMessage = JSON.parse(event.data as string);
           setLastMessage(data);
           updateFromRelay(data);
           updateGesture(data);
         } catch {
-          // Ignore malformed messages
           console.warn('[WS] Failed to parse message:', event.data);
         }
       };
@@ -84,7 +79,6 @@ export function useWebSocket(): UseWebSocketReturn {
         if (!mountedRef.current) return;
         setStatus('disconnected');
 
-        // Auto-reconnect with exponential backoff
         if (retryCountRef.current < MAX_RECONNECT_RETRIES) {
           const delay = INITIAL_RECONNECT_DELAY * Math.pow(2, retryCountRef.current);
           retryCountRef.current += 1;
@@ -103,13 +97,11 @@ export function useWebSocket(): UseWebSocketReturn {
     }
   }, [getWsUrl, cleanup, updateFromRelay, updateGesture]);
 
-  // ── Manual reconnect ──
   const reconnect = useCallback(() => {
     retryCountRef.current = 0;
     connect();
   }, [connect]);
 
-  // ── Connect on mount, reconnect when relayHost changes ──
   useEffect(() => {
     mountedRef.current = true;
     retryCountRef.current = 0;

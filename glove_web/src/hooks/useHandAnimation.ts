@@ -5,12 +5,11 @@ import { eulerToQuaternion, slerpQuaternion, lerp } from '../utils/quaternion';
 import {
   LERP_FACTOR,
   NUM_KEYPOINTS,
-  HALL_FINGER_MAP,
+  FLEX_FINGER_MAP,
 } from '../utils/constants';
 import type { HandPose, Keypoint3D } from '../types';
 
 // ── Rest Pose (open hand, normalized 3D coordinates) ──
-// Approximate hand model: palm ~3 units wide, fingers extend ~2.5 units
 export function getRestPose(): Keypoint3D[] {
   return [
     // 0: WRIST
@@ -43,88 +42,118 @@ export function getRestPose(): Keypoint3D[] {
   ];
 }
 
-// ── Map hall sensor value (0-1 range) to finger curl ──
-// Higher hall value = more curled
-function hallToCurl(hallValue: number): number {
-  // Normalize to 0..1 and clamp
-  const normalized = Math.max(0, Math.min(1, (hallValue + 1) / 2));
-  return normalized;
-}
-
-// ── Apply curl to finger keypoints ──
-function applyFingerCurl(
+// ── Apply V5 flex sensor curl to finger keypoints ──
+// Each flex sensor [0,1] controls one finger's MCP/PIP/DIP via 2:1 cascade
+function applyFlexCurl(
   restPose: Keypoint3D[],
-  hallValues: number[],
+  flexValues: number[],
 ): Keypoint3D[] {
   const result = restPose.map((kp) => ({ ...kp }));
 
-  // For each hall sensor, curl the corresponding finger joints
-  for (let i = 0; i < hallValues.length && i < HALL_FINGER_MAP.length; i++) {
-    const kpIndex = HALL_FINGER_MAP[i];
-    const curl = hallToCurl(hallValues[i]);
+  for (const mapping of FLEX_FINGER_MAP) {
+    const curl = Math.max(0, Math.min(1, flexValues[mapping.sensorIdx] || 0));
 
-    if (kpIndex > 0 && kpIndex < NUM_KEYPOINTS) {
-      // Curl toward wrist: reduce Y, increase Z (fist-like motion)
-      const wristY = restPose[0].y;
-      const jointRestY = restPose[kpIndex].y;
-      const curlOffset = (jointRestY - wristY) * curl * 0.7;
+    // MCP curl (full amount)
+    const mcpRest = restPose[mapping.mcpKeypoint];
+    const wristY = restPose[0].y;
+    const mcpCurlOffset = (mcpRest.y - wristY) * curl * 0.7;
+    result[mapping.mcpKeypoint].y = mcpRest.y - mcpCurlOffset;
+    result[mapping.mcpKeypoint].z = mcpRest.z + mcpCurlOffset * 0.5;
 
-      result[kpIndex].y = jointRestY - curlOffset;
-      result[kpIndex].z = curlOffset * 0.5; // slight forward push
-    }
+    // PIP curl (2/3 of MCP)
+    const pipRest = restPose[mapping.pipKeypoint];
+    const pipCurlOffset = (pipRest.y - wristY) * curl * 0.7 * 0.67;
+    result[mapping.pipKeypoint].y = pipRest.y - pipCurlOffset;
+    result[mapping.pipKeypoint].z = pipRest.z + pipCurlOffset * 0.5;
+
+    // DIP curl (1/3 of MCP)
+    const dipRest = restPose[mapping.dipKeypoint];
+    const dipCurlOffset = (dipRest.y - wristY) * curl * 0.7 * 0.33;
+    result[mapping.dipKeypoint].y = dipRest.y - dipCurlOffset;
+    result[mapping.dipKeypoint].z = dipRest.z + dipCurlOffset * 0.5;
   }
 
   // Thumb special: curl inward (toward palm center)
-  const thumbCurl = hallValues.length >= 3
-    ? (hallToCurl(hallValues[1]) + hallToCurl(hallValues[2])) / 2
-    : 0;
+  const thumbCurl = flexValues.length > 0 ? Math.max(0, Math.min(1, flexValues[0])) : 0;
   for (const idx of [2, 3, 4]) {
     const restX = restPose[idx].x;
-    result[idx].x = restX + thumbCurl * 0.6; // move thumb toward palm
+    result[idx].x = restX + thumbCurl * 0.6;
     result[idx].z = restPose[idx].z - thumbCurl * 0.4;
   }
 
   return result;
 }
 
+// ── V3 backward compat: map hall[15] to flex[5] ──
+function hallToFlex(hallValues: number[]): number[] {
+  if (hallValues.length < 5) return [0, 0, 0, 0, 0];
+  // V3 hall: 15 values, average groups of 3 per finger
+  return [
+    (hallValues[0] + hallValues[1] + hallValues[2]) / 3,  // thumb
+    (hallValues[3] + hallValues[4] + hallValues[5]) / 3,  // index
+    (hallValues[6] + hallValues[7] + hallValues[8]) / 3,  // middle
+    (hallValues[9] + hallValues[10] + hallValues[11]) / 3, // ring
+    (hallValues[12] + hallValues[13] + hallValues[14]) / 3, // pinky
+  ];
+}
+
+interface UseHandAnimationOptions {
+  handedness?: 'left' | 'right';
+}
+
 // ── Hook: useHandAnimation ──
-export function useHandAnimation(): HandPose {
+export function useHandAnimation(options: UseHandAnimationOptions = {}): HandPose {
+  const { handedness = 'left' } = options;
   const restPose = useMemo(() => getRestPose(), []);
 
-  // Mutable refs for smooth interpolation (updated every frame in useFrame)
   const currentKeypointsRef = useRef<Keypoint3D[]>(restPose);
   const currentQuaternionRef = useRef<[number, number, number, number]>([1, 0, 0, 0]);
   const targetQuaternionRef = useRef<[number, number, number, number]>([1, 0, 0, 0]);
 
-  // Subscribe to store (read-only, updated by WebSocket)
+  // Read per-hand data from store
+  const handData = useSensorStore((s) =>
+    handedness === 'left' ? s.leftHand : s.rightHand
+  );
   const hall = useSensorStore((s) => s.hall);
   const imu = useSensorStore((s) => s.imu);
 
-  // Update targets when sensor data changes
+  // Compute flex values: prefer V5 per-hand, fallback to V3 hall
+  const flexValues = useMemo(() => {
+    if (handData.flex.some((v: number) => v !== 0)) {
+      return handData.flex;
+    }
+    // V3 fallback
+    return hallToFlex(hall);
+  }, [handData.flex, hall]);
+
+  // Target keypoints from flex curl
   const targetKeypoints = useMemo(() => {
-    return applyFingerCurl(restPose, hall);
-  }, [restPose, hall]);
+    return applyFlexCurl(restPose, flexValues);
+  }, [restPose, flexValues]);
 
-  // Update wrist quaternion from IMU (gyro for orientation)
-  const imuChanged = JSON.stringify(imu);
+  // Wrist quaternion from euler (V5) or gyro (V3)
+  const eulerStr = JSON.stringify(handData.euler);
   useMemo(() => {
-    // IMU: [gyro_x, gyro_y, gyro_z, accel_x, accel_y, accel_z]
-    // Use gyro as orientation estimate (simplified: integrate as euler angles)
-    const gyroX = imu.length > 0 ? imu[0] : 0;
-    const gyroY = imu.length > 1 ? imu[1] : 0;
-    const gyroZ = imu.length > 2 ? imu[2] : 0;
-
-    // Convert gyro readings (rad/s conceptual) to small euler angles
-    const roll = (gyroX / 500) * Math.PI;     // Scale down significantly
-    const pitch = (gyroY / 500) * Math.PI;
-    const yaw = (gyroZ / 500) * Math.PI;
-
-    targetQuaternionRef.current = eulerToQuaternion(roll, pitch, yaw);
-  }, [imuChanged]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (handData.euler.some((v: number) => v !== 0)) {
+      // V5: euler angles in degrees → radians
+      const roll = (handData.euler[0] || 0) * Math.PI / 180;
+      const pitch = (handData.euler[1] || 0) * Math.PI / 180;
+      const yaw = (handData.euler[2] || 0) * Math.PI / 180;
+      targetQuaternionRef.current = eulerToQuaternion(roll, pitch, yaw);
+    } else {
+      // V3 fallback: gyro → euler approximation
+      const gyroX = imu.length > 0 ? imu[0] : 0;
+      const gyroY = imu.length > 1 ? imu[1] : 0;
+      const gyroZ = imu.length > 2 ? imu[2] : 0;
+      const roll = (gyroX / 500) * Math.PI;
+      const pitch = (gyroY / 500) * Math.PI;
+      const yaw = (gyroZ / 500) * Math.PI;
+      targetQuaternionRef.current = eulerToQuaternion(roll, pitch, yaw);
+    }
+  }, [eulerStr]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Smooth interpolation every frame
   useFrame(() => {
-    // Lerp keypoints
     for (let i = 0; i < NUM_KEYPOINTS; i++) {
       const current = currentKeypointsRef.current[i];
       const target = targetKeypoints[i];
@@ -134,8 +163,6 @@ export function useHandAnimation(): HandPose {
         z: lerp(current.z, target.z, LERP_FACTOR),
       };
     }
-
-    // SLERP quaternion
     currentQuaternionRef.current = slerpQuaternion(
       currentQuaternionRef.current,
       targetQuaternionRef.current,
@@ -150,5 +177,6 @@ export function useHandAnimation(): HandPose {
     get quaternion() {
       return currentQuaternionRef.current;
     },
+    handedness,
   } as HandPose;
 }

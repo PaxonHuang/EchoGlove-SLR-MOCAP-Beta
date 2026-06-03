@@ -1,5 +1,5 @@
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Grid, PerspectiveCamera } from '@react-three/drei';
+import { OrbitControls, Grid, PerspectiveCamera, Text } from '@react-three/drei';
 import HandSkeleton from './HandSkeleton';
 import { COLORS } from '../../utils/constants';
 
@@ -11,8 +11,8 @@ export function HandCanvas() {
         dpr={[1, 2]}
         style={{ background: COLORS.background }}
       >
-        {/* Camera */}
-        <PerspectiveCamera makeDefault position={[0, 3, 6]} fov={50} />
+        {/* Camera — pulled back to see both hands */}
+        <PerspectiveCamera makeDefault position={[0, 3, 8]} fov={50} />
 
         {/* Lighting */}
         <ambientLight intensity={0.6} />
@@ -34,15 +34,36 @@ export function HandCanvas() {
           infiniteGrid
         />
 
-        {/* Hand Skeleton */}
-        <HandSkeleton />
+        {/* Left Hand */}
+        <HandSkeleton handedness="left" position={[-1.8, 0.5, 0]} />
+        <Text
+          position={[-1.8, -0.2, 0]}
+          fontSize={0.2}
+          color="#94a3b8"
+          anchorX="center"
+          anchorY="top"
+        >
+          LEFT
+        </Text>
+
+        {/* Right Hand */}
+        <HandSkeleton handedness="right" position={[1.8, 0.5, 0]} />
+        <Text
+          position={[1.8, -0.2, 0]}
+          fontSize={0.2}
+          color="#94a3b8"
+          anchorX="center"
+          anchorY="top"
+        >
+          RIGHT
+        </Text>
 
         {/* Orbit Controls */}
         <OrbitControls
           enablePan={false}
           enableZoom={true}
           minDistance={3}
-          maxDistance={12}
+          maxDistance={15}
           target={[0, 1.5, 0]}
         />
       </Canvas>

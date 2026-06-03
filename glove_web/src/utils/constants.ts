@@ -66,16 +66,24 @@ export const COLORS = {
   gridFloor: '#1e293b',
 } as const;
 
-// ── Hall Sensor to Finger Mapping ──
-// 15 hall sensors: [thumb_cmc, thumb_mcp, thumb_ip, index_mcp, index_pip, index_dip,
-//                   middle_mcp, middle_pip, middle_dip, ring_mcp, ring_pip, ring_dip,
-//                   pinky_mcp, pinky_pip, pinky_dip]
+// ── V3 Hall Sensor to Finger Mapping (15 sensors, backward compat) ──
 export const HALL_FINGER_MAP: number[] = [
   2, 3, 4,       // thumb MCP, IP -> affects thumb
   5, 6, 7,       // index MCP, PIP, DIP
   9, 10, 11,     // middle MCP, PIP, DIP
   13, 14, 15,    // ring MCP, PIP, DIP
   17, 18, 19,    // pinky MCP, PIP, DIP
+];
+
+// ── V5 Flex Sensor to Keypoint Mapping (5 sensors per hand) ──
+// Each flex sensor maps to the MCP joint of its finger.
+// The PIP/DIP joints are derived via 2:1 cascade from the MCP curl.
+export const FLEX_FINGER_MAP: { sensorIdx: number; mcpKeypoint: number; pipKeypoint: number; dipKeypoint: number }[] = [
+  { sensorIdx: 0, mcpKeypoint: 2,  pipKeypoint: 3,  dipKeypoint: 4  },  // thumb
+  { sensorIdx: 1, mcpKeypoint: 5,  pipKeypoint: 6,  dipKeypoint: 7  },  // index
+  { sensorIdx: 2, mcpKeypoint: 9,  pipKeypoint: 10, dipKeypoint: 11 },  // middle
+  { sensorIdx: 3, mcpKeypoint: 13, pipKeypoint: 14, dipKeypoint: 15 },  // ring
+  { sensorIdx: 4, mcpKeypoint: 17, pipKeypoint: 18, dipKeypoint: 19 },  // pinky
 ];
 
 // ── Gesture Label Map ──
