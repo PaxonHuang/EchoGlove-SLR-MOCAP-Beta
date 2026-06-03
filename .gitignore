@@ -57,3 +57,16 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.bak
+
+# Claude Code artifacts
+.playwright-mcp/
+skills-lock.json
+*.remember/
+
+# Generated protobuf (regenerate with grpcio-tools)
+glove_relay/proto/glove_data_pb2.py
+
+# Model artifacts
+glove_relay/models/*.pt
+glove_relay/models/*.jit
+glove_relay/models/*.tflite

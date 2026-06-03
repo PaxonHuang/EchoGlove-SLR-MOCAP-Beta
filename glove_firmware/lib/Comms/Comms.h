@@ -1,17 +1,15 @@
 /**
  * @file Comms.h
- * @brief Communication modules for EdgeAI Data Glove V3
+ * @brief Communication modules for EchoGlove V5.0 DualGloveFlex
  *
  * This directory contains:
- * - BLEManager: NimBLE-based BLE 5.0 provisioning and data
- * - UDPTransmitter: WiFi UDP telemetry sender
- * - Protobuf: Nanopb message definitions
+ * - ESPNOWTransmitter: ESP-NOW 69-byte GlovePacket broadcast
+ * - glove_data.proto: Protobuf v5 schema
  */
 
 #ifndef COMMS_H
 #define COMMS_H
 
-// Comms module initialized - see individual comms files
-#define COMMS_MODULE_VERSION "3.0.0"
+#define COMMS_MODULE_VERSION "5.0.0"
 
 #endif // COMMS_H

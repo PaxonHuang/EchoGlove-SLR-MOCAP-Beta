@@ -1,4 +1,0 @@
-[    1427ms] ReferenceError: jQuery is not defined
-    at https://openhands.ai4bharat.org/en/latest/:204:7
-[    1440ms] [INFO] Slow network is detected. See https://www.chromestatus.com/feature/5636954674692096 for more details. Fallback font will be used while loading: https://openhands.ai4bharat.org/en/latest/_static/css/fonts/fontawesome-webfont.woff2?af7ae505a9eed503f8b8e6982036873e @ https://openhands.ai4bharat.org/en/latest/:209
-[    2604ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ https://media.ethicalads.io/media/client/ethicalads.min.js:0
