@@ -34,12 +34,22 @@
 | 7 | ⏳ | E2E integration (needs hardware) |
 
 ### Cleanup Done (2026-06-03)
+
+**Code cleanup:**
 - Removed 14 V3 files (Hall/MUX/BLE/UDP/temp)
-- Archived V3/V4 docs to `docs/archive/v3/`
-- Updated `.gitignore` (playwright-mcp, skills-lock, generated pb2)
 - Migrated `udp_server.py` + `main.py` to V5
 - Created `scripts/calibrate.py` + updated `data_collector.py`
 - Frontend: V5 types, dual-hand rendering, per-hand gesture display
+
+**Docs cleanup (`23de267`):**
+- Archived V3 hardware docs (ASSEMBLY, WIRING, PCB-Guide) to `docs/archive/v3/`
+- Created V5 hardware guides (flat I²C, flex sensors, ESP-NOW, dual-hand)
+- Consolidated `V5.0DualGloveFlex/`: archived GLM+Kimi drafts, kept MimoPro V5.1
+- Updated `notebooks/README.md` with V5 constants (11/28-dim, flex sensors)
+- Added V5 migration headers to all 3 Jupyter notebooks
+- Updated `references/README.md` for V5 sensor list
+- Copied V5 design spec + plan to `docs/superpowers/`
+- Fixed `.gitignore` to track `docs/archive/`
 
 ---
 
