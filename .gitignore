@@ -36,8 +36,7 @@ glove_unity/Obj/
 glove_unity/*.csproj
 glove_unity/*.sln
 
-# Archive (temporary)
-archive/
+# Note: docs/archive/ is tracked (V3/V4 historical docs)
 
 # IDE
 .idea/
