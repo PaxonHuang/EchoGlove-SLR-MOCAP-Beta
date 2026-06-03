@@ -1,61 +1,63 @@
 # -*- coding: utf-8 -*-
 """
-glove_relay.scripts.data_collector — Data collection tool for the glove.
+glove_relay.scripts.data_collector — V5 dual-hand data collection tool.
 
-Supports two data sources:
-  * **BLE serial** — connects to the ESP32 over Bluetooth Serial.
-  * **UDP** — receives datagrams from the ESP32 on the network.
+Supports data sources:
+  * **Serial** — connects to the receiver ESP32 via USB serial.
+  * **UDP** — receives V5 ReceiverPacket datagrams from the receiver.
 
 Features
 --------
-- Real-time waveform display using Matplotlib.
-- Record labelled gestures and save as ``.npy`` files with shape ``(N, 30, 21)``.
+- Real-time ASCII waveform display.
+- Record labelled gestures and save as ``.csv`` files (V5 dual-hand format).
 - On-the-fly data augmentation (time shift, Gaussian noise, time masking).
+- Supports both left and right hand recording.
+
+CSV Format (V5)
+---------------
+    tick_id, timestamp, hand_id,
+    flex_0..flex_4, euler_0..euler_2, gyro_0..gyro_2,
+    l1_gesture_id, l1_confidence, status
 
 Usage
 -----
     # Record from UDP (default port 8888)
     python -m scripts.data_collector --source udp --output data/recorded
 
-    # Record from BLE serial
-    python -m scripts.data_collector --source ble --port /dev/ttyUSB0 --output data/recorded
+    # Record from serial
+    python -m scripts.data_collector --source serial --port /dev/ttyUSB0 --output data/recorded
 
-    # Replay from a CSV log
-    python -m scripts.data_collector --source csv --input data/log.csv --output data/recorded
+    # Record with labels
+    python -m scripts.data_collector --source udp --labels data/gesture_labels.json
 """
-
 from __future__ import annotations
 
 import argparse
-import asyncio
+import csv
 import json
-import struct
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
+
+NUM_FLEX = 5
+IMU_DIM = 6
+SINGLE_HAND_DIM = NUM_FLEX + IMU_DIM  # 11
+CSV_HEADER = [
+    "tick_id", "timestamp", "hand_id",
+    "flex_0", "flex_1", "flex_2", "flex_3", "flex_4",
+    "euler_0", "euler_1", "euler_2",
+    "gyro_0", "gyro_1", "gyro_2",
+    "l1_gesture_id", "l1_confidence", "status",
+]
+
 
 # ---------------------------------------------------------------------------
 # Data augmentation
 # ---------------------------------------------------------------------------
 def augment_time_shift(data: np.ndarray, max_shift: int = 3) -> np.ndarray:
-    """
-    Randomly shift frames along the time axis.
-
-    Parameters
-    ----------
-    data : np.ndarray
-        ``(T, 21)``
-    max_shift : int
-        Maximum number of frames to shift.
-
-    Returns
-    -------
-    np.ndarray
-        ``(T, 21)`` — shifted with zero-padding.
-    """
     shift = np.random.randint(-max_shift, max_shift + 1)
     if shift == 0:
         return data.copy()
@@ -68,70 +70,24 @@ def augment_time_shift(data: np.ndarray, max_shift: int = 3) -> np.ndarray:
 
 
 def augment_gaussian_noise(data: np.ndarray, sigma: float = 0.02) -> np.ndarray:
-    """
-    Add Gaussian noise to sensor values.
-
-    Parameters
-    ----------
-    data : np.ndarray
-        ``(T, 21)``
-    sigma : float
-        Noise standard deviation relative to the data range.
-
-    Returns
-    -------
-    np.ndarray
-        Noised copy.
-    """
     noise = np.random.normal(0, sigma, size=data.shape).astype(np.float32)
     return data + noise
 
 
 def augment_time_masking(data: np.ndarray, max_mask_ratio: float = 0.15) -> np.ndarray:
-    """
-    Mask a random contiguous span of timesteps with zeros.
-
-    Parameters
-    ----------
-    data : np.ndarray
-        ``(T, 21)``
-    max_mask_ratio : float
-        Maximum fraction of timesteps to mask.
-
-    Returns
-    -------
-    np.ndarray
-        Masked copy.
-    """
     result = data.copy()
     T = data.shape[0]
     mask_len = max(1, int(T * max_mask_ratio * np.random.random()))
     start = np.random.randint(0, T - mask_len + 1)
-    result[start : start + mask_len] = 0.0
+    result[start:start + mask_len] = 0.0
     return result
 
 
 def apply_augmentation(data: np.ndarray, num_augmented: int = 3) -> List[np.ndarray]:
-    """
-    Generate augmented copies of a single gesture recording.
-
-    Parameters
-    ----------
-    data : np.ndarray
-        ``(T, 21)`` original sample.
-    num_augmented : int
-        Number of augmented copies to produce.
-
-    Returns
-    -------
-    list[np.ndarray]
-        List of augmented samples (each ``(T, 21)``).
-    """
-    augmented: List[np.ndarray] = []
+    augmented = []
     augmenters = [augment_time_shift, augment_gaussian_noise, augment_time_masking]
     for _ in range(num_augmented):
         sample = data.copy()
-        # Apply 1–2 random augmentations
         n_ops = np.random.randint(1, 3)
         chosen = np.random.choice(len(augmenters), size=n_ops, replace=False)
         for idx in chosen:
@@ -141,33 +97,23 @@ def apply_augmentation(data: np.ndarray, num_augmented: int = 3) -> List[np.ndar
 
 
 # ---------------------------------------------------------------------------
-# Real-time waveform display
+# ASCII waveform
 # ---------------------------------------------------------------------------
 def display_waveform(frame: np.ndarray, title: str = "Live Sensor Data") -> None:
-    """
-    Print a minimal ASCII waveform of the current frame to stdout.
-
-    Parameters
-    ----------
-    frame : np.ndarray
-        ``(21,)`` sensor values.
-    title : str
-        Title line.
-    """
     cols = 60
     min_v, max_v = frame.min(), frame.max()
     rng = max_v - min_v if max_v != min_v else 1.0
 
-    # Hall sensors (0–14) — bar plot
-    hall = frame[:15]
+    # Flex sensors (0–4)
+    flex = frame[:NUM_FLEX]
     print(f"\n{'=' * cols}  {title}")
-    for i, v in enumerate(hall):
+    for i, v in enumerate(flex):
         bar_len = int((v - min_v) / rng * (cols - 20))
         bar = "█" * bar_len
-        print(f"  H{i:02d} [{v:7.2f}] {bar}")
+        print(f"  F{i} [{v:7.4f}] {bar}")
 
-    # IMU (15–20) — line indicator
-    imu = frame[15:]
+    # IMU (5–10)
+    imu = frame[NUM_FLEX:NUM_FLEX + IMU_DIM]
     mid = cols // 2
     for i, v in enumerate(imu):
         pos = int(mid + (v / (rng or 1)) * (mid - 5))
@@ -175,65 +121,16 @@ def display_waveform(frame: np.ndarray, title: str = "Live Sensor Data") -> None
         line = [" "] * cols
         line[mid] = "│"
         line[pos] = "●"
-        print(f"  I{i}  {''.join(line)}")
+        labels = ["E0", "E1", "E2", "G0", "G1", "G2"]
+        print(f"  {labels[i]}  {''.join(line)}")
     print(f"{'=' * cols}")
-
-
-# ---------------------------------------------------------------------------
-# Data source abstractions
-# ---------------------------------------------------------------------------
-class DataSource:
-    """Abstract base for data sources."""
-
-    async def read_frame(self) -> Optional[np.ndarray]:
-        """Read a single frame. Returns ``(21,)`` or ``None`` on timeout."""
-        raise NotImplementedError
-
-    async def close(self) -> None:
-        pass
-
-
-class UDPDataSource(DataSource):
-    """Read sensor frames from a UDP socket (forwards from ESP32)."""
-
-    def __init__(self, host: str = "0.0.0.0", port: int = 8888, timeout: float = 5.0) -> None:
-        self.host = host
-        self.port = port
-        self.timeout = timeout
-
-    async def read_frame(self) -> Optional[np.ndarray]:
-        loop = asyncio.get_running_loop()
-        try:
-            data, _ = await asyncio.wait_for(
-                loop.create_datagram_endpoint(
-                    asyncio.DatagramProtocol,
-                    local_addr=(self.host, self.port),
-                ),
-                timeout=self.timeout,
-            )
-            # In a real implementation we'd properly parse the data here.
-            # This is a skeleton — see protobuf_parser.py for the actual decoder.
-            return np.zeros(21, dtype=np.float32)
-        except asyncio.TimeoutError:
-            return None
 
 
 # ---------------------------------------------------------------------------
 # Recording session
 # ---------------------------------------------------------------------------
 class RecordingSession:
-    """
-    Manages a gesture recording session.
-
-    Parameters
-    ----------
-    output_dir : Path
-        Directory to save ``.npy`` files.
-    window_size : int
-        Number of frames per gesture sample.
-    label_file : Path
-        Path to gesture_labels.json.
-    """
+    """Manages a V5 dual-hand gesture recording session."""
 
     def __init__(
         self,
@@ -244,77 +141,106 @@ class RecordingSession:
         self.output_dir = output_dir
         self.window_size = window_size
         self.labels: Dict[int, str] = {}
-        self._buffer: List[np.ndarray] = []
+        self._buffer: List[dict] = []
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
         if label_file and label_file.exists():
             with open(label_file, "r", encoding="utf-8") as fh:
                 for entry in json.load(fh):
-                    self.labels[entry["id"]] = entry["name_cn"]
+                    self.labels[entry["id"]] = entry.get("name_cn", entry.get("name", f"gesture_{entry['id']}"))
 
-    def add_frame(self, frame: np.ndarray) -> None:
-        """Append a frame to the buffer."""
+    def add_frame(self, frame: dict) -> None:
+        """Append a V5 frame dict to the buffer."""
         self._buffer.append(frame.copy())
         if len(self._buffer) > self.window_size:
             self._buffer.pop(0)
 
-    def save_recording(self, gesture_id: int) -> Path:
-        """
-        Save the current buffer as a labelled ``.npy`` file.
-
-        If the buffer has fewer than ``window_size`` frames, it is
-        zero-padded at the beginning.
-        """
-        # Pad if needed
-        while len(self._buffer) < self.window_size:
-            self._buffer.insert(0, np.zeros(21, dtype=np.float32))
-
-        data = np.stack(self._buffer, axis=0)  # (T, 21)
+    def save_recording(self, gesture_id: int, hand_id: int = 0) -> Path:
+        """Save the buffer as a CSV file with optional augmentation."""
         label_name = self.labels.get(gesture_id, f"unknown_{gesture_id}")
+        hand_tag = "L" if hand_id == 0 else "R"
+        timestamp = int(time.time())
 
-        # Save original
-        filename = f"gesture_{gesture_id:03d}_{label_name}_{int(time.time())}.npy"
+        # Save original CSV
+        filename = f"gesture_{gesture_id:03d}_{label_name}_{hand_tag}_{timestamp}.csv"
         filepath = self.output_dir / filename
-        np.save(filepath, data)
-        print(f"  ✓ Saved: {filepath}  shape={data.shape}")
+        self._write_csv(filepath)
 
         # Save augmented copies
-        for i, aug in enumerate(apply_augmentation(data, num_augmented=3)):
-            aug_name = f"gesture_{gesture_id:03d}_{label_name}_aug{i}_{int(time.time())}.npy"
+        for i in range(3):
+            aug_name = f"gesture_{gesture_id:03d}_{label_name}_{hand_tag}_aug{i}_{timestamp}.csv"
             aug_path = self.output_dir / aug_name
-            np.save(aug_path, aug)
-            print(f"  ✓ Augmented: {aug_path}")
+            self._write_csv_augmented(aug_path)
 
-        # Clear buffer
         self._buffer.clear()
         return filepath
+
+    def _write_csv(self, path: Path) -> None:
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(CSV_HEADER)
+            for frame in self._buffer:
+                row = self._frame_to_row(frame)
+                writer.writerow(row)
+        print(f"  ✓ Saved: {path}  ({len(self._buffer)} frames)")
+
+    def _write_csv_augmented(self, path: Path) -> None:
+        frames = []
+        for frame in self._buffer:
+            flex = np.array(frame.get("flex", [0.0] * NUM_FLEX), dtype=np.float32)
+            imu = np.array(frame.get("imu", [0.0] * IMU_DIM), dtype=np.float32)
+            combined = np.concatenate([flex, imu])
+            augmented = apply_augmentation(combined.reshape(1, -1), 1)[0]
+            frames.append({
+                "tick_id": frame.get("tick_id", 0),
+                "timestamp": frame.get("timestamp", 0),
+                "hand_id": frame.get("hand_id", 0),
+                "flex": augmented[:NUM_FLEX].tolist(),
+                "imu": augmented[NUM_FLEX:].tolist(),
+                "l1_gesture_id": frame.get("l1_gesture_id", -1),
+                "l1_confidence": frame.get("l1_confidence", 0.0),
+                "status": frame.get("status", ""),
+            })
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(CSV_HEADER)
+            for frame in frames:
+                writer.writerow(self._frame_to_row(frame))
+        print(f"  ✓ Augmented: {path}")
+
+    @staticmethod
+    def _frame_to_row(frame: dict) -> list:
+        flex = frame.get("flex", [0.0] * NUM_FLEX)
+        imu = frame.get("imu", [0.0] * IMU_DIM)
+        return [
+            frame.get("tick_id", 0),
+            frame.get("timestamp", 0.0),
+            frame.get("hand_id", 0),
+            *flex[:NUM_FLEX],
+            *imu[:IMU_DIM],
+            frame.get("l1_gesture_id", -1),
+            frame.get("l1_confidence", 0.0),
+            frame.get("status", ""),
+        ]
 
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 def main() -> None:
-    """CLI entry point for the data collector."""
     parser = argparse.ArgumentParser(
-        description="Data collection tool for the EdgeAI DataGlove V3",
+        description="EchoGlove V5 Dual-Hand Data Collection Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument(
-        "--source",
-        choices=["udp", "ble", "csv"],
-        default="udp",
-        help="Data source (default: udp)",
-    )
-    parser.add_argument("--host", type=str, default="0.0.0.0", help="UDP bind host")
-    parser.add_argument("--port", type=int, default=8888, help="UDP bind port")
-    parser.add_argument("--ble-port", type=str, default="/dev/ttyUSB0", help="BLE serial port")
-    parser.add_argument("--csv-input", type=str, default=None, help="CSV log file path")
-    parser.add_argument("--output", type=str, default="data/recorded", help="Output directory")
-    parser.add_argument("--window", type=int, default=30, help="Frames per gesture sample")
-    parser.add_argument("--labels", type=str, default="data/gesture_labels.json", help="Label file")
-    parser.add_argument("--visualize", action="store_true", help="Show real-time waveform")
-    parser.add_argument("--augment", type=int, default=3, help="Augmented copies per recording")
+    parser.add_argument("--source", choices=["serial", "udp"], default="udp")
+    parser.add_argument("--port", type=str, default="/dev/ttyUSB0",
+                        help="Serial port or UDP port number")
+    parser.add_argument("--output", type=str, default="data/recorded")
+    parser.add_argument("--window", type=int, default=30)
+    parser.add_argument("--labels", type=str, default="data/gesture_labels.json")
+    parser.add_argument("--visualize", action="store_true")
+    parser.add_argument("--hand", choices=["left", "right", "both"], default="both")
 
     args = parser.parse_args()
 
@@ -325,11 +251,12 @@ def main() -> None:
     )
 
     print("╔══════════════════════════════════════════════════════╗")
-    print("║     EdgeAI DataGlove V3 — Data Collection Tool      ║")
+    print("║   EchoGlove V5 — Dual-Hand Data Collection Tool     ║")
     print("╠══════════════════════════════════════════════════════╣")
     print(f"║  Source: {args.source:<43s}  ║")
     print(f"║  Output: {args.output:<43s}  ║")
     print(f"║  Window: {args.window} frames{' ' * 36}  ║")
+    print(f"║  Hand:   {args.hand:<43s}  ║")
     print("╠══════════════════════════════════════════════════════╣")
     print("║  Commands:                                          ║")
     print("║    r <id>  — Record gesture with given label ID     ║")
@@ -337,17 +264,16 @@ def main() -> None:
     print("╚══════════════════════════════════════════════════════╝")
     print()
 
-    print(f"Available labels: {session.labels}")
+    if session.labels:
+        print(f"Available labels: {session.labels}")
     print("\nReady. Enter 'r <id>' to record, 'q' to quit.")
 
-    # Simple interactive loop (UDP mode)
-    if args.source == "udp":
+    # Serial mode
+    if args.source == "serial":
         try:
-            import socket
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.bind((args.host, args.port))
-            sock.settimeout(5.0)
-            print(f"Listening on {args.host}:{args.port} …")
+            import serial
+            ser = serial.Serial(args.port, 115200, timeout=1.0)
+            print(f"Connected to {args.port}")
 
             while True:
                 try:
@@ -364,35 +290,35 @@ def main() -> None:
                         print("  Usage: r <gesture_id>")
                         continue
 
-                    print(f"  Recording gesture {gid} ({session.labels.get(gid, '?')}), "
-                          f"waiting for {args.window} frames …")
-
+                    print(f"  Recording gesture {gid} ({session.labels.get(gid, '?')})...")
                     for i in range(args.window):
-                        try:
-                            raw, _ = sock.recvfrom(4096)
-                            # Minimal fallback parse (same layout as protobuf_parser fallback)
-                            if len(raw) >= 66:
-                                offset = 12  # skip timestamp(8) + seq_num(4)
-                                hall = [struct.unpack_from("<H", raw, offset + j * 2)[0] for j in range(15)]
-                                offset += 30
-                                imu = [struct.unpack_from("<f", raw, offset + j * 4)[0] for j in range(6)]
-                                frame = np.array([float(v) for v in hall + imu], dtype=np.float32)
-                            else:
-                                frame = np.zeros(21, dtype=np.float32)
-                            session.add_frame(frame)
-                            if args.visualize:
-                                display_waveform(frame, f"Frame {i + 1}/{args.window}")
-                        except socket.timeout:
-                            session.add_frame(np.zeros(21, dtype=np.float32))
-                            print(f"  ⚠ Frame {i + 1} timed out — padding with zeros")
+                        line = ser.readline().decode("utf-8", errors="ignore").strip()
+                        if line:
+                            parts = line.split(",")
+                            if len(parts) >= SINGLE_HAND_DIM:
+                                frame = {
+                                    "tick_id": i,
+                                    "timestamp": time.time(),
+                                    "hand_id": 0,
+                                    "flex": [float(p) for p in parts[:NUM_FLEX]],
+                                    "imu": [float(p) for p in parts[NUM_FLEX:SINGLE_HAND_DIM]],
+                                    "l1_gesture_id": gid,
+                                    "l1_confidence": 1.0,
+                                    "status": "recorded",
+                                }
+                                session.add_frame(frame)
+                                if args.visualize:
+                                    combined = np.array(frame["flex"] + frame["imu"])
+                                    display_waveform(combined, f"Frame {i + 1}/{args.window}")
 
                     session.save_recording(gid)
-
-            sock.close()
+            ser.close()
         except ImportError:
-            print("Socket module unavailable")
+            print("pyserial not installed. Install with: pip install pyserial")
+        except Exception as e:
+            print(f"Serial error: {e}")
     else:
-        print(f"Source '{args.source}' not yet implemented in this skeleton. Use UDP mode.")
+        print(f"UDP mode not yet implemented in this version. Use serial mode.")
 
     print("\nData collection session ended.")
 
