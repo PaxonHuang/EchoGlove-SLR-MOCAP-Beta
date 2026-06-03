@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 """
-glove_relay.src.main — FastAPI application entry point.
+glove_relay.src.main — FastAPI application entry point (V5).
 
 Starts the Relay server which:
-  1. Listens on UDP :8888 for Protobuf sensor data from the ESP32 glove.
-  2. Runs L1 (lightweight) and L2 (ST-GCN fallback) inference.
+  1. Listens on UDP :8888 for V5 ReceiverPacket protobuf from the ESP32 receiver.
+  2. Runs Tier1/Tier2/Tier3 inference with ConfidenceRouter.
   3. Applies NLP grammar correction and optional TTS.
   4. Broadcasts JSON results to every connected WebSocket client on :8765.
 
@@ -21,7 +21,6 @@ Usage
 import asyncio
 import time
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
@@ -81,22 +80,10 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
         tts_engine = TTSEngine()
         logger.info("TTS engine loaded — voice=%s", tts_engine.voice)
 
-    # --- Confidence router -----------------------------------------------
-    def _l1_predict(features):
-        if model_registry.l1_model is not None:
-            return model_registry.l1_model.predict(features)
-        return -1, 0.0
-
-    def _l2_predict(window):
-        if model_registry.l2_model is not None:
-            return model_registry.l2_model.predict(window)
-        return -1, 0.0
-
+    # --- Confidence router (V5) ------------------------------------------
     router = ConfidenceRouter(
-        config=config,
-        l1_model=_l1_predict,
-        l2_model=_l2_predict,
-        grammar_corrector=grammar_corrector.correct if grammar_corrector else None,
+        blend_frames=5,
+        min_confidence=config.inference.l1_confidence_threshold,
     )
 
     # --- UDP server (background asyncio task) ----------------------------
@@ -135,9 +122,9 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
 # FastAPI application factory
 # ---------------------------------------------------------------------------
 app = FastAPI(
-    title="Glove Relay V3",
-    description="Bridges ESP32 protobuf UDP ↔ React WebSocket with L1/L2 inference, NLP, and TTS.",
-    version="3.0.0",
+    title="Glove Relay V5",
+    description="Bridges ESP32-S3 receiver → PC relay with Tier1/Tier2/Tier3 inference, NLP, and TTS.",
+    version="5.0.0",
     lifespan=lifespan,
 )
 
@@ -161,7 +148,7 @@ app.add_middleware(
 @app.get("/health")
 async def health_check() -> dict[str, str]:
     """Lightweight liveness probe."""
-    return {"status": "ok", "service": "glove-relay", "version": "3.0.0"}
+    return {"status": "ok", "service": "glove-relay", "version": "5.0.0"}
 
 
 @app.get("/api/models")

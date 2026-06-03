@@ -2,19 +2,17 @@
 from __future__ import annotations
 
 """
-glove_relay.src.udp_server — Asyncio UDP server for receiving ESP32 data.
+glove_relay.src.udp_server — Asyncio UDP server for receiving V5 receiver data.
 
-Protocol flow
--------------
-1. ESP32 sends *GloveData* protobuf datagrams to ``<host>:8888``.
+Protocol flow (V5)
+------------------
+1. Receiver ESP32 sends *ReceiverPacket* protobuf datagrams to ``<host>:8888``.
 2. ``UDPServer.receive_loop()`` parses each datagram via
-   :func:`src.protobuf_parser.parse_glove_data`.
-3. L1 inference is invoked immediately; if confidence ≤ threshold,
-   frames are buffered and L2 inference is triggered.
+   :class:`src.protobuf_parser.ProtobufParser`.
+3. Tier1/Tier2 inference is invoked; results are routed via ConfidenceRouter.
 4. The resulting JSON dict is pushed to all WebSocket clients via the
    ``on_data_callback``.
 """
-
 
 import asyncio
 import time
@@ -23,8 +21,8 @@ from typing import Any, Callable, Deque
 
 import numpy as np
 
-from src.confidence_router import ConfidenceRouter, RouteResult
-from src.protobuf_parser import parse_glove_data
+from src.confidence_router import ConfidenceRouter
+from src.protobuf_parser import ProtobufParser
 from src.utils.config import get_config
 from src.utils.logger import get_logger
 
@@ -35,7 +33,7 @@ BroadcastFn = Callable[[dict[str, Any]], Any]
 
 
 class UDPServer:
-    """Asynchronous UDP receiver that drives the inference pipeline."""
+    """Asynchronous UDP receiver that drives the V5 inference pipeline."""
 
     def __init__(
         self,
@@ -45,32 +43,18 @@ class UDPServer:
         on_data_callback: BroadcastFn | None = None,
         router: ConfidenceRouter | None = None,
     ) -> None:
-        """
-        Parameters
-        ----------
-        host:
-            Bind address (typically ``"0.0.0.0"``).
-        port:
-            UDP port to listen on.
-        buffer_size:
-            Maximum datagram payload size.
-        on_data_callback:
-            Function called with a JSON-serialisable ``dict`` whenever a
-            fully-processed inference result is available.
-        router:
-            Optional :class:`ConfidenceRouter` for L1→L2 routing with NLP.
-        """
         self.host = host
         self.port = port
         self.buffer_size = buffer_size
         self.on_data_callback: BroadcastFn | None = on_data_callback
         self._router: ConfidenceRouter | None = router
+        self._parser = ProtobufParser()
 
         # asyncio transport / protocol objects
         self._transport: asyncio.DatagramTransport | None = None
         self._protocol: _UDPProtocol | None = None
 
-        # Sliding window for L2 inference (kept for backward compat)
+        # Sliding window for Tier2 inference
         self._config = get_config()
         self._window_size: int = self._config.inference.l2_window_size  # 30
         self._frame_buffer: Deque[dict[str, Any]] = deque(maxlen=self._window_size)
@@ -131,34 +115,45 @@ class UDPServer:
     def _handle_datagram(self, data: bytes, addr: tuple[str, int]) -> None:
         """Parse one datagram, run inference, and broadcast results."""
         try:
-            parsed = parse_glove_data(data)
+            parsed = self._parser.parse_receiver_packet(data)
+            if parsed is None:
+                logger.warning("Invalid V5 packet from %s:%d (%d bytes)", addr[0], addr[1], len(data))
+                return
         except Exception:
             logger.warning("Failed to parse datagram from %s:%d (%d bytes)", addr[0], addr[1], len(data))
             return
 
+        # --- Build tier results from parsed V5 data ---
+        left = parsed.get("left", {})
+        right = parsed.get("right", {})
+
+        tier1_result = {
+            "gesture_id": left.get("l1_gesture_id", -1),
+            "confidence": left.get("l1_confidence", 0.0),
+        }
+
         # --- Use ConfidenceRouter if available ---
         if self._router is not None:
-            route = self._router.route(parsed)
+            route = self._router.route(tier1=tier1_result)
             result: dict[str, Any] = {
-                "timestamp": parsed.get("timestamp", time.time()),
-                "hall": parsed.get("hall", []),
-                "imu": parsed.get("imu", []),
-                "l1_gesture_id": parsed.get("l1_gesture_id", -1),
-                "l1_confidence": parsed.get("l1_confidence", 0.0),
-                "l2_gesture_id": route.gesture_id if route.source == "l2" else -1,
-                "l2_confidence": route.confidence if route.source == "l2" else 0.0,
-                "nlp_text": route.nlp_text,
-                "status": route.status,
+                "timestamp": time.time(),
+                "flex": left.get("flex", []),
+                "imu": left.get("imu", []),
+                "l1_gesture_id": tier1_result["gesture_id"],
+                "l1_confidence": tier1_result["confidence"],
+                "l2_gesture_id": route.get("gesture_id", -1) if route.get("active_tier") != "tier1" else -1,
+                "l2_confidence": route.get("confidence", 0.0) if route.get("active_tier") != "tier1" else 0.0,
+                "nlp_text": "",
+                "status": f"v5_{route.get('active_tier', 'tier1')}",
             }
         else:
             # Legacy path (no router)
-            l1_result = self._run_l1(parsed)
             result = {
-                "timestamp": parsed.get("timestamp", time.time()),
-                "hall": parsed.get("hall", []),
-                "imu": parsed.get("imu", []),
-                "l1_gesture_id": l1_result[0],
-                "l1_confidence": l1_result[1],
+                "timestamp": time.time(),
+                "flex": left.get("flex", []),
+                "imu": left.get("imu", []),
+                "l1_gesture_id": tier1_result["gesture_id"],
+                "l1_confidence": tier1_result["confidence"],
                 "l2_gesture_id": -1,
                 "l2_confidence": 0.0,
                 "nlp_text": "",
@@ -168,7 +163,7 @@ class UDPServer:
             now = time.time() * 1000.0
             if (
                 self._config.inference.l2_enabled
-                and l1_result[1] <= self._l2_threshold
+                and tier1_result["confidence"] <= self._l2_threshold
                 and (now - self._last_gesture_time) >= self._silence_ms
                 and self._debounce_counter >= self._debounce_frames
             ):
@@ -195,16 +190,13 @@ class UDPServer:
     # ------------------------------------------------------------------
     # Inference stubs — replaced with real model calls in production
     # ------------------------------------------------------------------
-    def _run_l1(self, parsed: dict[str, Any]) -> tuple[int, float]:
+    def _run_l1(self, features: np.ndarray) -> tuple[int, float]:
         """Run L1 model on a single frame. Returns ``(gesture_id, confidence)``."""
-        # Lazy import to avoid circular dependency at module level
         from src.models.model_registry import ModelRegistry
 
         registry = ModelRegistry.instance()
         if registry is not None and registry.l1_model is not None:
-            features = np.array(parsed.get("hall", []) + parsed.get("imu", []), dtype=np.float32)
             return registry.l1_model.predict(features.reshape(1, -1))
-        # Fallback when no model is loaded
         logger.debug("No L1 model — returning placeholder")
         return (-1, 0.0)
 
@@ -216,11 +208,11 @@ class UDPServer:
         if registry is not None and registry.l2_model is not None:
             window = np.stack(
                 [
-                    np.array(f.get("hall", []) + f.get("imu", []), dtype=np.float32)
+                    np.array(f.get("left", {}).get("flex", []) + f.get("left", {}).get("imu", []), dtype=np.float32)
                     for f in self._frame_buffer
                 ],
                 axis=0,
-            )  # (T, 21)
-            return registry.l2_model.predict(window.unsqueeze(0) if hasattr(window, "unsqueeze") else window.reshape(1, *window.shape))
+            )  # (T, 11)
+            return registry.l2_model.predict(window.reshape(1, *window.shape))
         logger.debug("No L2 model — returning placeholder")
         return (-1, 0.0)
