@@ -7,6 +7,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Design Spec: docs/superpowers/specs/2026-06-01-v5-dual-glove-flex-design.md
 - Implementation Plan: docs/superpowers/plans/2026-06-01-v5-dual-glove-flex.md
 - Architecture: 3x ESP32-S3, BNO085 + 5x Flex + 2x ADS1115, 3-tier inference
+- Test Status (2026-06-03): 156/156 pass (64 firmware + 12 receiver + 80 relay)
+- Phase Status: P0-P4, P6 done; P5/P7 need hardware
+
+### V5 Constants
+| Constant | Value |
+|----------|-------|
+| NUM_FLEX_SENSORS | 5 |
+| SINGLE_HAND_FEATURES | 11 (5 flex + 3 euler + 3 gyro) |
+| DUAL_HAND_FEATURES | 28 (L11 + R11 + Relative6) |
+| GlovePacket size | 69 bytes |
+| ESP-NOW latency | ~2ms |
+| I2C topology | Flat bus (no MUX): BNO085@0x4B + ADS1115@0x48 + ADS1115@0x49 |
 
 ---
 
