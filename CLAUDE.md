@@ -2,13 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## V5.0 DualGloveFlex Migration (2026-06-01)
+## V5.2 DualGloveFlex + P4 Base Station (2026-06-01)
 - Branch: V5-DualGloveFlex
-- Design Spec: docs/superpowers/specs/2026-06-01-v5-dual-glove-flex-design.md
-- Implementation Plan: docs/superpowers/plans/2026-06-01-v5-dual-glove-flex.md
-- Architecture: 3x ESP32-S3, BNO085 + 5x Flex + 2x ADS1115, 3-tier inference
+- V5 Spec: docs/superpowers/specs/2026-06-01-v5-dual-glove-flex-design.md
+- V5.2 Spec: docs/superpowers/specs/2026-06-10-v52-p4-base-station-design.md
+- Architecture: 2x ESP32-S3 gloves + C6 ESP-NOW relay + P4 smart base station (Tier2 + LVGL + TTS)
 - Test Status (2026-06-10): 168/168 pass (64 firmware + 12 receiver + 12 P4 native + 80 relay)
-- Phase Status: P0-P4, P6 done; P5/P7 need hardware
 - V5.2 P4 Base Station: 8/8 tasks done (commits f4e4d34..bef0c96), ready for hardware
 
 ### V5 Constants
@@ -31,7 +30,7 @@ When I provide detailed specs or explicit instructions for project initializatio
 
 ## Project Context
 
-This is an ESP32-S3 hand sign recognition glove project using PlatformIO (V5.0 DualGloveFlex). Key components: BNO085 IMU, 5x flex sensors (via ADS1115), dual-hand support. Architecture follows a 3-tier inference approach (L1 edge, L2 relay, L3 rendering). When continuing work, check previous session progress before restarting from scratch.
+ESP32-S3 data glove + ESP32-P4 smart base station for hand sign recognition. Key components: BNO085 IMU, 5x flex sensors (via ADS1115), dual-hand support. 3-tier inference: L1 edge (S3 glove), L2 base station (P4 Tier2), L3 PC (ST-GCN). When continuing work, check `PROGRESS.md` before restarting from scratch.
 
 ---
 
@@ -41,20 +40,14 @@ This is an ESP32-S3 hand sign recognition glove project using PlatformIO (V5.0 D
 
 **Architecture**:
 - **Layer 1 (Edge)**: ESP32-S3 with 1D-CNN+Attention L1 model (<3ms latency)
-- **Layer 2 (Relay)**: Python FastAPI + ST-GCN + NLP + TTS
+- **Layer 2 (P4 Base Station)**: ESP32-P4 TFLite Micro Tier2 inference + LVGL display + TTS audio (standalone)
+- **Layer 2 (PC Relay, fallback)**: Python FastAPI + ST-GCN + NLP + TTS
 - **Layer 3a (Web MVP)**: React 18 + Vite + R3F (3D hand skeleton)
 - **Layer 3b (Unity Pro)**: Unity 2022 LTS + XR Hands + ms-MANO
 
-**V5 Constants**:
-- `NUM_FLEX_SENSORS=5`
-- `IMU_FEATURE_COUNT=6` (3 euler + 3 gyro)
-- `SINGLE_HAND_FEATURES=11`
-- `DUAL_HAND_FEATURES=28`
-- `NUM_CLASSES=46`
-
 **Key Decisions**:
 - **No Rust/Tauri**: V5 uses pure Web (React + R3F), no desktop framework
-- **Python Relay**: Unified hub for UDP→WebSocket conversion + L2 inference
+- **Python Relay**: Unified hub for UDP/USB→WebSocket conversion + L2 inference
 - **Model Hot-Switch**: BaseModel interface + YAML config switching
 - **BLE for Provisioning Only**: Frontend uses WiFi→Relay→WebSocket
 
@@ -63,14 +56,25 @@ This is an ESP32-S3 hand sign recognition glove project using PlatformIO (V5.0 D
 ## Directory Structure
 
 ```
-├── glove_firmware/      # ESP32-S3 PlatformIO firmware
-├── glove_relay/         # Python FastAPI relay server
-├── glove_web/           # React + R3F frontend
-├── glove_unity/         # Unity L3 Pro skeleton
-├── docs/                # SOP and Prompts
-│   ├── SOP_SPEC_PLAN_V3.md
-│   └── CLAUDE_CODE_PROMPTS_V3.md
-├── archive/             # Old code backup (can be deleted)
+├── glove_firmware/          # ESP32-S3 PlatformIO firmware (gloves)
+│   ├── src/                 # Glove main.cpp + FreeRTOS tasks
+│   ├── lib/                 # Sensors, Models, Comms, Filters
+│   ├── shared/              # uart_frame.h, p4_protocol.h
+│   ├── receiver/            # S3 USB receiver (FramePairer)
+│   ├── p4_base_station/     # V5.2 P4 smart base station
+│   │   ├── c6_firmware/     # C6 ESP-NOW relay (ESP-IDF)
+│   │   ├── p4_firmware/     # P4 Tier2 inference + LVGL + TTS
+│   │   └── tests/           # Native tests (pio test)
+│   └── scripts/             # Model export, calibration, TTS gen
+├── glove_relay/             # Python FastAPI relay server
+├── glove_web/               # React + R3F frontend
+├── glove_unity/             # Unity L3 Pro skeleton
+├── docs/
+│   ├── superpowers/         # V5/V5.2 design specs + implementation plans
+│   ├── V5.0DualGloveFlex/   # V5.2 reference docs (GLM)
+│   ├── archive/             # Historical docs (v3, v5-ai-drafts)
+│   ├── references/          # PDF datasheets, research papers
+│   └── notebooks/           # Jupyter notebooks (data, training)
 └── CLAUDE.md
 ```
 
@@ -92,6 +96,19 @@ pio device monitor
 
 # Build with debug configuration
 pio run -e esp32-s3-devkitc-1-n16r8_debug
+```
+
+### P4 Base Station (C6 + P4, ESP-IDF v5.4+)
+```bash
+# C6 co-processor
+cd glove_firmware/p4_base_station/c6_firmware
+idf.py set-target esp32c6
+idf.py build && idf.py -p /dev/ttyUSBx flash monitor
+
+# P4 main processor
+cd glove_firmware/p4_base_station/p4_firmware
+idf.py set-target esp32p4
+idf.py build && idf.py -p /dev/ttyUSBx flash monitor
 ```
 
 ### Python Relay (glove_relay)
@@ -178,14 +195,14 @@ ESP32 平台版本 `espressif32@^6.5.0`，新版编译器更严格：
 ## Data Flow
 
 ```
-ESP32-S3                    Python Relay              Web Frontend
-┌─────────────┐             ┌────────────┐           ┌───────────┐
-│ Sensors     │ UDP:8888    │ FastAPI    │ WS:8765   │ React+R3F │
-│ L1 Inference │──Protobuf─→│ Protobuf→  │──JSON──→ │ 3D Hand   │
-│ FreeRTOS    │             │ JSON       │           │ Skeleton  │
-└─────────────┘             │ L2 ST-GCN  │           └───────────┘
-                            │ NLP + TTS  │
-                            └────────────┘
+Gloves (S3)              P4 Base Station            PC Relay             Frontend
+┌─────────────┐  ESP-NOW  ┌──────┐ UART 2Mbps ┌──────────┐  USB HS  ┌──────────┐  WS:8765  ┌───────────┐
+│ L/R Gloves  │──~2ms──→│  C6  │───────────→│   P4     │────────→│ FastAPI  │────────→│ React+R3F │
+│ Tier1 CNN   │           └──────┘           │ Tier2    │         │ Tier3    │         │ 3D Hand   │
+│ 28-dim feat │                              │ LVGL+TTS │         │ ST-GCN   │         │ Skeleton  │
+└─────────────┘                              └──────────┘         │ NLP+TTS  │         └───────────┘
+                                                                  └──────────┘
+Standalone mode (no PC): P4 runs Tier2 + LVGL display + TTS audio independently.
 ```
 
 ---
@@ -204,8 +221,12 @@ ESP32-S3                    Python Relay              Web Frontend
 |------|---------|
 | `glove_firmware/src/main.cpp` | FreeRTOS tasks with static_assert fix |
 | `glove_firmware/lib/Models/ModelRegistry.h` | L1 model hot-switch |
+| `glove_firmware/shared/uart_frame.h` | CRC-16/MODBUS UART frame encode/decode |
+| `glove_firmware/p4_base_station/p4_firmware/main/main.cpp` | P4 FreeRTOS: UART, inference, display, audio, USB |
+| `glove_firmware/p4_base_station/c6_firmware/main/main.cpp` | C6 ESP-NOW receive + UART relay |
 | `glove_relay/src/main.py` | FastAPI + WebSocket relay |
 | `glove_relay/src/models/stgcn_model.py` | L2 ST-GCN implementation |
+| `glove_relay/src/usb_cdc_server.py` | P4 USB CDC serial input to relay |
 | `glove_web/src/hooks/useWebSocket.ts` | WebSocket client with auto-reconnect |
 | `glove_web/src/components/Hand3D/HandSkeleton.tsx` | 21-keypoint 3D hand |
 
@@ -213,10 +234,11 @@ ESP32-S3                    Python Relay              Web Frontend
 
 ## Hardware Context
 
-- **MCU**: ESP32-S3-DevKitC-1 N16R8 (8MB Flash + 8MB PSRAM)
-- **I2C**: GPIO 8 (SDA), GPIO 9 (SCL), 400kHz
+- **Glove MCU**: ESP32-S3-DevKitC-1 N16R8 (8MB Flash + 8MB PSRAM)
+- **Base Station**: ESP32-P4 (400MHz RV32, 32MB PSRAM) + ESP32-C6-MINI-1 co-processor
+- **I2C**: GPIO 8 (SDA), GPIO 9 (SCL), 400kHz — flat bus: BNO085@0x4B + ADS1115@0x48 + ADS1115@0x49
 - **Sensors**: BNO085 IMU (address 0x4B), 5x flex sensors (via 2x ADS1115 ADC)
-- **V5 removed**: TMAG5273, TCA9548A [REMOVED in V5]
+- **V5 removed components**: TMAG5273 (Hall sensor), TCA9548A (I2C MUX) — see `docs/archive/v3/` for historical wiring
 
 ---
 
@@ -238,24 +260,27 @@ ESP32-S3                    Python Relay              Web Frontend
 | Phase | Name | Status |
 |-------|------|--------|
 | P0 | Project init (PlatformIO + React + FastAPI) | Done |
-| P1 | HAL & drivers (TMAG5273 [REMOVED in V5], BNO085, TCA9548A [REMOVED in V5]) | Done |
+| P1 | HAL & drivers (BNO085, ADS1115) | Done |
 | P2 | Signal processing (Kalman filter, normalization, sliding window) | Done |
 | P3 | L1 Edge Inference — Edge Impulse MVP (path A) | Done |
-| P3.5 | Model Benchmark comparison | Pending |
-| P4 | Communication (BLE provisioning + WiFi UDP) | Pending |
-| P5 | Python Relay + L2 ST-GCN + NLP + TTS | Pending |
-| P6 | Web rendering (React + R3F) / Unity Pro | Pending |
-| P7 | Integration testing | Pending |
-| V5 | DualGloveFlex migration (flex sensors, dual-hand, 3-tier) | **← ACTIVE** |
+| P4 | Communication (BLE provisioning + WiFi UDP) | Done |
+| P5 | Python Relay + L2 ST-GCN + NLP + TTS | Done (tests 88/88) |
+| P6 | Web rendering (React + R3F) / Unity Pro | Done |
+| V5 | DualGloveFlex migration (flex sensors, dual-hand, 3-tier) | Done |
+| V5.2 | P4 Smart Base Station (C6 + P4 + LVGL + TTS) | **Done (code)** |
 
-**Current task (P3 Path A)**: Use `edge-impulse-data-forwarder` with serial CSV output → train 1D-CNN in Edge Impulse → export Arduino library → integrate into firmware. See `PROGRESS.md` for details.
+**Next**: Hardware testing — flash C6→verify ESP-NOW, flash P4→verify UART data flow. See `PROGRESS.md` for details.
 
 ---
 
 ## Documentation
 
-- **SOP**: `docs/SOP_SPEC_PLAN_V3.md` — Full phase specification (938 lines)
-- **Prompts**: `docs/CLAUDE_CODE_PROMPTS_V3.md` — 28 executable prompts
+- **V5 Design Spec**: `docs/superpowers/specs/2026-06-01-v5-dual-glove-flex-design.md`
+- **V5 Plan**: `docs/superpowers/plans/2026-06-01-v5-dual-glove-flex.md`
+- **V5.2 P4 Design Spec**: `docs/superpowers/specs/2026-06-10-v52-p4-base-station-design.md`
+- **V5.2 P4 Plan**: `docs/superpowers/plans/2026-06-10-v52-p4-base-station.md`
+- **V5.2 Reference Docs**: `docs/V5.0DualGloveFlex/` (GLM generated)
+- **Historical (V3/V4/V5 drafts)**: `docs/archive/`
 
 ---
 
@@ -285,7 +310,6 @@ After modifying any source file in this project, always run `pio run` to verify 
 ## PlatformIO Dependency Notes
 
 - **lib_deps syntax**: Use `owner/libname @ version` (space before @), NOT `owner/libname=@version`
-- **TMAG5273**: Local driver in `lib/Sensors/TMG5273.h/.cpp` — do NOT add SparkFun TMAG5273 library to lib_deps [REMOVED in V5]
 - **TFLite Micro**: Use `tanakamasayuki/TensorFlowLite_ESP32` (ESP32 optimized)
 
 ## Library Architecture
@@ -343,12 +367,20 @@ Context7 and Espressif Docs failures are proxy-related (`127.0.0.1:15721`), not 
 - **UDP Port**: ESP32 sends to port **8888** (configured in `platformio.ini`)
 - **Relay Host**: Web frontend connects to `ws://${relayHost}:8765` — default is `localhost`
 - **File line endings**: Managed by `.gitattributes` — LF for all source, CRLF only for Windows scripts
+- **P4 UART**: C6→P4 uses 2Mbps UART with CRC-16/MODBUS. Frame: `[0xAA 0x55 69-byte payload CRC16_L CRC16_H]` = 73 bytes
+- **P4 vs S3 builds**: P4/C6 use ESP-IDF (`idf.py`), S3 gloves use PlatformIO (`pio`) — different build systems
 
 ## Testing
 
-### Firmware Tests
+### Firmware Tests (glove)
 ```bash
 cd glove_firmware
+pio test
+```
+
+### P4 Base Station Tests (native)
+```bash
+cd glove_firmware/p4_base_station/tests
 pio test
 ```
 
