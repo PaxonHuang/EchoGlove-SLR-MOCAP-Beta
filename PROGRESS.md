@@ -4,9 +4,10 @@
 
 ---
 
-## V5.2 P4 Smart Base Station (NEW)
+## V5.2 P4 Smart Base Station
 
 **Status**: All 8 tasks implemented ✅ — ready for hardware testing
+**Latest commit**: `82d3d15` (CLAUDE.md + docs cleanup)
 **Branch**: V5-DualGloveFlex
 **Design Spec**: `docs/superpowers/specs/2026-06-10-v52-p4-base-station-design.md`
 **Implementation Plan**: `docs/superpowers/plans/2026-06-10-v52-p4-base-station.md`
@@ -41,11 +42,12 @@
 | Relay (USB CDC + integration) | 8 | 88 |
 
 ### Next Steps
-1. Hardware test: flash C6 firmware, verify ESP-NOW reception from gloves
-2. Hardware test: flash P4 firmware, verify UART C6→P4 data flow
-3. Run model export script (`glove_firmware/scripts/export_model.py`) when trained weights available
-4. Full LVGL BSP integration (needs P4 EV Board + 7" display)
-5. ES8311 I2S audio wiring (needs BSP audio component)
+1. **Hardware test**: flash C6 firmware, verify ESP-NOW reception from gloves
+2. **Hardware test**: flash P4 firmware, verify UART C6→P4 data flow
+3. **Model export**: run `python glove_firmware/scripts/export_model.py` when trained weights available
+4. **LVGL BSP**: integrate with P4 EV Board 7" MIPI-DSI display
+5. **ES8311 audio**: wire I2S via `esp_codec_dev` BSP component
+6. **Competition demo**: full system integration + demo script
 
 ---
 

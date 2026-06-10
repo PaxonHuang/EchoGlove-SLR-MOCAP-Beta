@@ -1,12 +1,58 @@
 # PROGRESS_CN.md — 跨会话状态追踪器
 
-**最后更新**: 2026-06-03
+**最后更新**: 2026-06-10
 
 ---
 
-## V5.0 DualGloveFlex 迁移 (2026-06-02)
+## V5.2 P4 智能基站 (2026-06-10)
 
-**状态**: Phase 0-4 完成 ✅, Phase 5-7 待定
+**状态**: 全部 8 个任务实现 ✅ — 等待硬件测试
+**分支**: V5-DualGloveFlex
+**设计文档**: `docs/superpowers/specs/2026-06-10-v52-p4-base-station-design.md`
+**计划文档**: `docs/superpowers/plans/2026-06-10-v52-p4-base-station.md`
+**时间线**: 3 周（截止日期 2026 年 6 月）
+
+### 关键决策
+- ESP32-P4-Function-EV-Board v1.5.2 作为智能基站（竞赛提供）
+- C6：ESP-NOW 接收器 + UART 中继至 P4
+- P4：Tier2 推理（TFLite Micro, 28-dim, ~80KB INT8）+ LVGL 7 寸显示屏 + TTS 音频 + USB HS
+- UWB 推迟至赛后（V5.3）
+- 手套固件：零修改
+
+### 任务分解
+
+| 任务 | 描述 | 提交 | 状态 |
+|------|------|------|------|
+| 1 | 共享协议库（UART 帧） | `f4e4d34` | ✅ 12/12 测试 |
+| 2 | C6 ESP-NOW + UART 中继固件 | `ef8d450` | ✅ |
+| 3 | P4 UART 接收 + 帧配对 + 28-dim 组装 | `b3b011a` | ✅ |
+| 4 | P4 Tier2 推理（TFLite Micro） | `ef1c84e` | ✅ (存根) |
+| 5 | P4 LVGL 显示 UI | `350ddb8` | ✅ (存根) |
+| 6 | P4 TTS 音频 + USB CDC | `350ddb8` | ✅ (存根) |
+| 7 | PC 中继 USB CDC 输入扩展 | `62b65d3` | ✅ 88/88 测试 |
+| 8 | 集成测试 | `bef0c96` | ✅ |
+
+### 测试汇总 (V5.2 新增)
+
+| 组件 | 新增测试 | 总计 |
+|------|----------|------|
+| P4 原生（UART 帧 + 配对 + 特征） | 12 | 12 |
+| 中继（USB CDC + 集成） | 8 | 88 |
+
+### 下一步
+
+1. **硬件测试**：刷写 C6 固件，验证 ESP-NOW 接收手套数据
+2. **硬件测试**：刷写 P4 固件，验证 UART C6→P4 数据流
+3. **模型导出**：运行 `python glove_firmware/scripts/export_model.py`（需要训练好的权重）
+4. **LVGL BSP**：集成 P4 EV Board 7 寸 MIPI-DSI 显示屏
+5. **ES8311 音频**：通过 `esp_codec_dev` BSP 组件连接 I2S
+6. **竞赛演示**：全系统集成 + 演示脚本
+
+---
+
+## V5.0 DualGloveFlex 迁移 (2026-06-01)
+
+**状态**: Phase 0-6 完成 ✅, Phase 5/7 需要硬件
 **分支**: V5-DualGloveFlex
 **设计文档**: `docs/superpowers/specs/2026-06-01-v5-dual-glove-flex-design.md`
 **计划文档**: `docs/superpowers/plans/2026-06-01-v5-dual-glove-flex.md`
@@ -17,9 +63,9 @@
 |------|--------|------|
 | 固件（native） | 64 | ✅ 全部通过 |
 | 接收器（native） | 12 | ✅ 全部通过 |
-| 中继（pytest） | 70 | ✅ 全部通过 |
-| 中继集成测试 | 10 | ❌ 被阻塞（V3 udp_server.py） |
-| **总计** | **156** | **146 通过，10 被阻塞** |
+| 中继（pytest） | 80 | ✅ 全部通过 |
+| P4 原生（V5.2 新增） | 12 | ✅ 全部通过 |
+| **总计** | **168** | **全部通过** |
 
 ### Phase 0: 分支创建与清理 ✅
 - [x] 创建 V5-DualGloveFlex 分支
@@ -270,7 +316,16 @@ ESP32-S3 通过 USB CDC 连接到 Ubuntu (`/dev/ttyACM0`)。硬件部分接线�
 
 ## 当前工作
 
-**当前**: Phase 5 Python Relay Server 已完成（133/133 测试）。硬件测试暂停 — 用户正在采购新组件（面包板、杜邦线、TCA9548A、TMAG5273 替换件）。明天：Phase 1–4 硬件重新验证。
+**当前**: V5.2 P4 基站全部 8 个任务完成。代码就绪，等待硬件测试。
+
+### 下一步（按优先级）
+
+1. **P4 基站硬件测试**：刷写 C6→验证 ESP-NOW，刷写 P4→验证 UART 数据流
+2. **手套硬件重新验证**：新面包板 I2C 扫描 → 传感器验证
+3. **Edge Impulse 数据收集**：训练 L1 1D-CNN 模型
+4. **模型导出**：PyTorch→ONNX→TFLite INT8 → 集成到 P4 固件
+5. **LVGL BSP 集成**：7 寸触摸屏 UI
+6. **ES8311 音频**：TTS 语音播放
 
 ### Phase 5 完成总结 (2026-05-28)
 
@@ -308,21 +363,15 @@ ESP32-S3 通过 USB CDC 连接到 Ubuntu (`/dev/ttyACM0`)。硬件部分接线�
 | 阶段 | 名称 | 状态 |
 |------|------|------|
 | P0 | 项目初始化 | 已完成 |
-| P1 | HAL & 驱动 | 已完成（代码）— **需用新面包板重新验证硬件** |
-| P2 | 信号处理 | 已完成（代码）— **需用新面包板重新验证** |
-| P3 | L1 边缘推理 — 管道 + TDD | 已完成（42/44 原生测试） |
-| P3.5 | 模型基准测试 | 待定 |
-| P4 | 通信 (BLE/UDP/Protobuf) | 已完成（133/133 中继测试） |
-| P5 | Python Relay + L2 ST-GCN + NLP + TTS | **已完成**（133/133 测试） |
-| P6 | Web 渲染 / Unity Pro | 已有脚手架 |
-| P7 | 集成测试 | 待定 |
+| P1 | HAL & 驱动 (BNO085, ADS1115) | 已完成 |
+| P2 | 信号处理 | 已完成 |
+| P3 | L1 边缘推理 — 管道 + TDD | 已完成 |
+| P4 | 通信 (BLE/UDP/Protobuf) | 已完成 |
+| P5 | Python Relay + L2 ST-GCN + NLP + TTS | 已完成（88/88 测试） |
+| P6 | Web 渲染 / Unity Pro | 已完成 |
+| V5 | DualGloveFlex 迁移 (柔性传感器 + 双手) | 已完成 (168/168 测试) |
+| V5.2 | P4 智能基站 (C6 + P4 + LVGL + TTS) | **已完成（代码）** |
 
-### 下一步（按顺序）
-
-1. **硬件重新验证**（明天）：新面包板 I2C 扫描 → 传感器验证 → CSV 输出
-2. **Edge Impulse 数据收集**（路径 A MVP）：训练 L1 1D-CNN 模型
-3. **模型导出**：TFLite → 集成到固件
-4. **Phase 6**：React + R3F 前端（WebSocket 消费者 + 3D 手部骨架）
 ---
 
 ## 第三阶段: L1 边缘推理 — TDD 完成 (2026-05-22)

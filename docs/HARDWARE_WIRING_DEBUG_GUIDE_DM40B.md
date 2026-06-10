@@ -1,8 +1,10 @@
-# EchoGlove V5.0 — Wiring Debug & Multimeter Guide
+# EchoGlove V5.2 — Wiring Debug & Multimeter Guide
 
-> **Version**: V5.0 | **Date**: 2026-06-03 | **Tool**: DM40B Digital Multimeter
+> **Version**: V5.2 | **Date**: 2026-06-10 | **Tool**: DM40B Digital Multimeter
 >
 > **V3 Users**: V5 does not use TCA9548A MUX or TMAG5273 Hall sensors. V3 guide: `docs/archive/v3/HARDWARE_WIRING_DEBUG_GUIDE_DM40B.md`
+>
+> **V5.2 Note**: P4 base station (ESP32-P4-Function-EV-Board) is competition-provided — no custom wiring needed. This guide covers glove hardware only.
 
 ---
 

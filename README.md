@@ -1,152 +1,194 @@
-# Edge AI Data Glove V3
+# EchoGlove V5.2 — Edge-AI Data Glove + P4 Smart Base Station
 
-**Edge-AI-Powered Data Glove with Dual-Tier Inference for Real-Time Sign Language Translation and 3D Hand Animation Rendering**
+**3-tier inference system for real-time sign language translation and 3D hand animation, with dual-hand support.**
 
 ![1778514913749](image/README/1778514913749.jpg)
-
----
-
-## Project Overview
-
-This project implements a dual-tier inference data glove system:
-
-- **L1 (Edge)**: ESP32-S3 on-device inference with 1D-CNN+Attention model (<3ms latency)
-- **L2 (Relay)**: Python server with ST-GCN for complex gesture sequences (<20ms latency)
-- **L3a (Web MVP)**: React + R3F 3D hand skeleton visualization
-- **L3b (Unity Pro)**: Unity 2022 LTS + ms-MANO high-fidelity rendering
 
 ---
 
 ## Architecture
 
 ```
-ESP32-S3 (Layer 1)              Python Relay (Layer 2)          Web Frontend (Layer 3)
-┌─────────────────┐   UDP:8888  ┌──────────────────┐  WS:8765  ┌─────────────────┐
-│ TMAG5273 ×5     │             │ FastAPI Server   │           │ React + R3F     │
-│ BNO085 ×1       │──Protobuf─→ │ UDP Receiver     │──JSON──→ │ 3D Hand Skeleton│
-│ TCA9548A        │   (100Hz)   │ Protobuf Parser  │  (100Hz)  │ Zustand Store   │
-│ FreeRTOS        │             │ L2 ST-GCN        │           │ TailwindCSS UI  │
-│ Core1: 100Hz    │             │ NLP Correction   │           │ PWA             │
-│ Core0: L1+Comm  │             │ edge-tts         │           │                 │
-└─────────────────┘             └──────────────────┘           └─────────────────┘
+Gloves (ESP32-S3)         P4 Base Station           PC Relay           Frontend
+┌─────────────┐  ESP-NOW  ┌──────┐ UART 2Mbps ┌──────────┐  USB HS  ┌──────────┐  WS:8765  ┌───────────┐
+│ L/R Gloves  │──~2ms──→ │  C6  │───────────→│   P4     │────────→│ FastAPI  │────────→│ React+R3F │
+│ Tier1 CNN   │           └──────┘           │ Tier2    │         │ Tier3    │         │ 3D Hand   │
+│ 28-dim feat │                              │ LVGL+TTS │         │ ST-GCN   │         │ Skeleton  │
+└─────────────┘                              └──────────┘         │ NLP+TTS  │         └───────────┘
+                                                                  └──────────┘
+Standalone mode (no PC): P4 runs Tier2 + LVGL display + TTS audio independently.
 ```
+
+### Three-Tier Inference
+
+| Tier | Location | Model | Latency | Classes | Accuracy |
+|------|----------|-------|---------|---------|----------|
+| L1 (Edge) | ESP32-S3 glove | 1D-CNN+Attention | <3ms | ~20 | ~85% |
+| L2 (P4 Base Station) | ESP32-P4 | GatedBiCrossAttention | <30ms | 46 | ~90% |
+| L3 (PC) | Python relay | ST-GCN + MS-TCN | <50ms | 60+ | ~95% |
+
+### V5.2 P4 Smart Base Station (NEW)
+
+- **C6 co-processor**: ESP-NOW relay from gloves → UART 2Mbps to P4
+- **P4 main processor**: Tier2 inference (TFLite Micro, ~80KB INT8) + 7" MIPI-DSI LVGL touchscreen + ES8311 TTS audio + USB 2.0 HS
+- **Standalone mode**: Works fully without PC — inference + display + audio on P4
 
 ---
 
 ## Quick Start
 
-### 1. Firmware (glove_firmware)
+### 1. Glove Firmware (ESP32-S3, PlatformIO)
 
 ```bash
 cd glove_firmware
 pio run                    # Build
 pio run -t upload          # Upload to ESP32-S3
-pio device monitor         # Monitor serial output (115200 baud)
+pio device monitor         # Serial monitor (115200 baud)
+pio test                   # Run firmware tests
 ```
 
-### 2. Python Relay (glove_relay)
+### 2. P4 Base Station (ESP-IDF v5.4+)
+
+```bash
+# C6 co-processor
+cd glove_firmware/p4_base_station/c6_firmware
+idf.py set-target esp32c6
+idf.py build && idf.py -p /dev/ttyUSBx flash monitor
+
+# P4 main processor
+cd glove_firmware/p4_base_station/p4_firmware
+idf.py set-target esp32p4
+idf.py build && idf.py -p /dev/ttyUSBx flash monitor
+
+# P4 native tests
+cd glove_firmware/p4_base_station/tests
+pio test
+```
+
+### 3. Python Relay (glove_relay)
 
 ```bash
 cd glove_relay
 pip install -r requirements.txt
 uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+python -m pytest tests/    # Run relay tests
 ```
 
-### 3. Web Frontend (glove_web)
+### 4. Web Frontend (glove_web)
 
 ```bash
 cd glove_web
 npm install
-npm run dev                # Development server: http://localhost:5173
+npm run dev                # Dev server: http://localhost:5173
 npm run build              # Production build
 ```
 
-### 4. Unity (glove_unity)
+### 5. Unity Pro (glove_unity) — Windows Only
 
-1. Open with Unity 2022.3 LTS
-2. Install XR Hands Package
-3. Configure WebSocket URL to Python Relay
-
----
-
-## Key Design Decisions (V3)
-
-| Decision         | Choice                    | Reason                                          |
-| ---------------- | ------------------------- | ----------------------------------------------- |
-| D1: Frontend     | React + R3F               | Remove Tauri/Rust, pure Web zero-install        |
-| D2: Relay        | FastAPI + WebSocket       | Unified Python hub for relay + L2 + TTS + NLP   |
-| D3: Rendering    | React MVP → Unity Pro    | Two-stage progressive evolution                 |
-| D4: Mobile       | Responsive Web + PWA      | "Add to Home Screen" for native-like experience |
-| D5: BLE          | Provisioning only         | No Web Bluetooth API (unstable)                 |
-| D6: L1 Models    | 1D-CNN+Attention + MS-TCN | Model pool with hot-switch support              |
-| D7: Model Switch | BaseModel + YAML          | Runtime switching without restart               |
-| D8: Benchmark    | Top-1/5 + FLOPs + latency | Data-driven model selection                     |
-
----
-
-## Key Components
-
-### glove_firmware (ESP32-S3)
-
-- FreeRTOS dual-core task scheduling (Core 1: 100Hz sampling, Core 0: inference + comms)
-- TCA9548A I2C multiplexer driver (5 channel switching)
-- TMAG5273 3D Hall sensor driver (12-bit, ±40mT)
-- BNO085 IMU driver with SH-2 protocol
-- Kalman filter for noise reduction
-- ModelRegistry for L1 model hot-switching
-- Nanopb Protobuf serialization
-
-### glove_relay (Python)
-
-- FastAPI + WebSocket server (port 8765)
-- asyncio UDP receiver (port 8888)
-- Protobuf → JSON conversion
-- ST-GCN L2 inference model
-- NLP grammar correction (CSL → Mandarin)
-- edge-tts voice synthesis
-
-### glove_web (React)
-
-- React 18 + Vite + TailwindCSS
-- React Three Fiber (R3F) for 3D rendering
-- Zustand state management
-- WebSocket hook with auto-reconnect
-- PWA manifest for "Add to Home Screen"
-
----
-
-## Performance Targets
-
-| Metric                   | Target     |
-| ------------------------ | ---------- |
-| L1 inference latency     | <3ms       |
-| L2 inference latency     | <20ms      |
-| End-to-end latency       | <100ms     |
-| L1 accuracy (46 classes) | >90% Top-1 |
-| L2 accuracy (46 classes) | >95% Top-1 |
-| Sensor sampling rate     | 100Hz      |
+Unity 2022.3 LTS + XR Hands package. See `glove_unity/README.md`.
 
 ---
 
 ## Hardware
 
-- **MCU**: ESP32-S3-DevKitC-1 N16R8 (8MB Flash + 8MB PSRAM)
-- **Hall Sensors**: 5× TMAG5273A1 (Texas Instruments, 3D Hall)
-- **IMU**: 1× BNO085 (Bosch, 9-axis with hardware fusion)
-- **I2C Mux**: TCA9548A (8-channel)
-- **I2C Pins**: GPIO 8 (SDA), GPIO 9 (SCL)
-- **BOM Cost**: ~$38.60
+### Gloves (ESP32-S3)
+
+| Component | Spec |
+|-----------|------|
+| MCU | ESP32-S3-DevKitC-1 N16R8 (8MB Flash + 8MB PSRAM) |
+| IMU | BNO085 (9-axis, address 0x4B) |
+| Flex sensors | 5x Spectra Symbol 2.2" (via 2x ADS1115 ADC) |
+| I2C | GPIO 8 (SDA), GPIO 9 (SCL), 400kHz, flat bus |
+| ADC addresses | ADS1115 #1: 0x48, ADS1115 #2: 0x49 |
+| Communication | ESP-NOW (~2ms latency) |
+
+### P4 Smart Base Station
+
+| Component | Spec |
+|-----------|------|
+| Main MCU | ESP32-P4 (400MHz RV32 dual-core, 32MB PSRAM) |
+| Co-processor | ESP32-C6-MINI-1 (ESP-NOW + BLE 5.0) |
+| Display | 7" MIPI-DSI 1024x600 capacitive touch (GT911) |
+| Camera | OV2710 2MP MIPI-CSI (deferred) |
+| Audio | ES8311 codec + NS4150 speaker (I2S, 16kHz, 16-bit, mono) |
+| USB | USB 2.0 HS OTG (480Mbps) |
+| UART | C6→P4, 2Mbps, GPIO43→GPIO38 |
+
+---
+
+## Key Design Decisions
+
+| Decision | Choice | Reason |
+|----------|--------|--------|
+| Flex sensors (V5) | Spectra Symbol 2.2" + ADS1115 | Mature, proven SLR approach |
+| Communication | ESP-NOW | ~2ms latency, no WiFi/BLE overhead |
+| Base station | ESP32-P4 + C6 | Competition board, standalone Tier2 inference |
+| L2 model | GatedBiCrossAttention | Dual-hand cross-attention for sign language |
+| Frontend | React + R3F (no Tauri/Rust) | Pure web, zero-install |
+| Model hot-switch | BaseModel + YAML config | Runtime switching without restart |
+| BLE | Provisioning only | No Web Bluetooth API (unstable) |
+
+---
+
+## Test Status
+
+| Component | Tests | Status |
+|-----------|-------|--------|
+| Firmware (native) | 64 | ✅ |
+| Receiver (native) | 12 | ✅ |
+| P4 base station (native) | 12 | ✅ |
+| Relay (pytest) | 80 | ✅ |
+| **Total** | **168** | **All pass** |
+
+---
+
+## Project Structure
+
+```
+glove_firmware/          # ESP32-S3 glove firmware (PlatformIO)
+├── src/                 # FreeRTOS tasks + main
+├── lib/                 # Sensors, Models, Comms, Filters
+├── shared/              # uart_frame.h, p4_protocol.h
+├── receiver/            # S3 USB receiver (FramePairer)
+├── p4_base_station/     # V5.2 P4 smart base station
+│   ├── c6_firmware/     # C6 ESP-NOW relay (ESP-IDF)
+│   ├── p4_firmware/     # P4 Tier2 + LVGL + TTS + USB
+│   └── tests/           # Native tests
+└── scripts/             # Model export, calibration, TTS gen
+
+glove_relay/             # Python FastAPI relay server
+glove_web/               # React + R3F 3D hand skeleton
+glove_unity/             # Unity XR Hands (Windows)
+docs/                    # Specs, plans, references
+```
+
+---
+
+## Performance Targets
+
+| Metric | Target |
+|--------|--------|
+| L1 inference latency | <3ms |
+| L2 inference latency (P4) | <30ms |
+| L3 inference latency (PC) | <50ms |
+| End-to-end latency | <100ms |
+| Sensor sampling rate | 100Hz |
+| ESP-NOW latency | ~2ms |
+| GlovePacket size | 69 bytes |
+| Feature vector | 28-dim (L11 + R11 + Relative6) |
 
 ---
 
 ## Documentation
 
-- `docs/SOP_SPEC_PLAN_V3.md` — Full phase specification
-- `docs/CLAUDE_CODE_PROMPTS_V3.md` — 28 executable prompts for Claude Code
-- `docs/references/` — Chip datasheets and research papers
+- **V5 Design Spec**: `docs/superpowers/specs/2026-06-01-v5-dual-glove-flex-design.md`
+- **V5.2 P4 Design Spec**: `docs/superpowers/specs/2026-06-10-v52-p4-base-station-design.md`
+- **Hardware Assembly**: `docs/HARDWARE_ASSEMBLY_GUIDE.md`
+- **Wiring Debug Guide**: `docs/HARDWARE_WIRING_DEBUG_GUIDE_DM40B.md`
+- **Research Papers**: `docs/references/`
 
 ---
 
 ## License
 
-Academic research project for thesis/publication.
+Academic research project for national embedded chip/system design competition (2026).

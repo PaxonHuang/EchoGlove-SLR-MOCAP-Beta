@@ -1,8 +1,10 @@
-# EchoGlove V5.0 DualGloveFlex — 硬件组装指南
+# EchoGlove V5.2 — 硬件组装指南
 
-> **版本**: V5.0 | **日期**: 2026-06-03 | **配合**: `docs/superpowers/specs/2026-06-01-v5-dual-glove-flex-design.md`
+> **版本**: V5.2 | **日期**: 2026-06-10 | **配合**: `docs/superpowers/specs/2026-06-10-v52-p4-base-station-design.md`
 >
 > **V3 用户注意**: 本指南基于 V5 架构（柔性传感器 + ESP-NOW 双手）。V3 霍尔传感器版本见 `docs/archive/v3/HARDWARE_ASSEMBLY_GUIDE.md`。
+>
+> **V5.2 新增**: P4 智能基站为竞赛提供的 ESP32-P4-Function-EV-Board v1.5.2，无需自行组装。基站包含 7 寸触摸屏、C6 协处理器、ES8311 音频。详见 V5.2 设计文档。
 
 ---
 
