@@ -30,8 +30,10 @@ from fastapi.responses import Response
 from src.confidence_router import ConfidenceRouter
 from src.models.model_registry import ModelRegistry
 from src.nlp.grammar_corrector import GrammarCorrector
+from src.protobuf_parser import ProtobufParser
 from src.tts.tts_engine import TTSEngine
 from src.udp_server import UDPServer
+from src.usb_cdc_server import USBCDCServer
 from src.utils.config import get_config
 from src.utils.logger import get_logger
 from src.ws_server import ConnectionManager
@@ -43,10 +45,66 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 ws_manager = ConnectionManager()
 udp_server: UDPServer | None = None
+usb_cdc_server: USBCDCServer | None = None
 model_registry: ModelRegistry | None = None
 grammar_corrector: GrammarCorrector | None = None
 tts_engine: TTSEngine | None = None
 _start_time: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# USB CDC data handler
+# ---------------------------------------------------------------------------
+_bsp_parser = ProtobufParser()
+_cdc_router: ConfidenceRouter | None = None
+
+
+def _handle_usb_data(data: bytes) -> None:
+    """Process raw bytes from USB CDC: parse BaseStationPacket, route, broadcast."""
+    parsed = _bsp_parser.parse_base_station_packet(data)
+    if parsed is None:
+        logger.warning("USB CDC: failed to parse BaseStationPacket (%d bytes)", len(data))
+        return
+
+    left = parsed.get("left", {})
+    right = parsed.get("right", {})
+
+    tier1_result = {
+        "gesture_id": left.get("l1_gesture_id", -1),
+        "confidence": left.get("l1_confidence", 0.0),
+    }
+    tier2_result = {
+        "gesture_id": parsed.get("tier2_gesture_id", -1),
+        "confidence": parsed.get("tier2_confidence", 0.0),
+    }
+
+    if _cdc_router is not None:
+        route = _cdc_router.route(tier1=tier1_result, tier2=tier2_result)
+    else:
+        route = {
+            "gesture_id": tier2_result["gesture_id"] if tier2_result["confidence"] > 0 else tier1_result["gesture_id"],
+            "confidence": max(tier1_result["confidence"], tier2_result["confidence"]),
+            "active_tier": "tier2" if tier2_result["confidence"] > tier1_result["confidence"] else "tier1",
+            "blend_alpha": 1.0,
+        }
+
+    result = {
+        "timestamp": time.time(),
+        "flex": left.get("flex", []),
+        "imu": left.get("imu", []),
+        "l1_gesture_id": tier1_result["gesture_id"],
+        "l1_confidence": tier1_result["confidence"],
+        "l2_gesture_id": tier2_result["gesture_id"],
+        "l2_confidence": tier2_result["confidence"],
+        "nlp_text": "",
+        "status": f"bs_{route.get('active_tier', 'tier1')}",
+        "base_station": parsed.get("base_station", {}),
+    }
+
+    try:
+        ws_manager.broadcast(result)
+    except Exception:
+        logger.exception("USB CDC broadcast failed")
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +113,8 @@ _start_time: float = 0.0
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     """Manage startup and shutdown lifecycle of the Relay server."""
-    global udp_server, model_registry, grammar_corrector, tts_engine, _start_time  # noqa: PLW0603
+    global udp_server, usb_cdc_server, model_registry, grammar_corrector, tts_engine, _start_time  # noqa: PLW0603
+    global _cdc_router  # noqa: PLW0603
 
     config = get_config()
     _start_time = time.time()
@@ -97,6 +156,15 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     udp_task = asyncio.create_task(udp_server.receive_loop(), name="udp-receive")
     logger.info("UDP server bound to %s:%d", config.udp.host, config.udp.port)
 
+    # --- USB CDC server (P4 base station) ---------------------------------
+    _cdc_router = router
+    usb_port = getattr(config, "usb_cdc_port", "/dev/ttyACM0")
+    usb_baud = getattr(config, "usb_cdc_baud", 2000000)
+    usb_cdc_server = USBCDCServer(port=usb_port, baud=usb_baud)
+    usb_cdc_server.set_callback(_handle_usb_data)
+    usb_task = asyncio.create_task(usb_cdc_server.start(), name="usb-cdc")
+    logger.info("USB CDC server started on %s @ %d", usb_port, usb_baud)
+
     yield  # application is now running
 
     # --- Shutdown --------------------------------------------------------
@@ -105,6 +173,14 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     udp_task.cancel()
     try:
         await udp_task
+    except asyncio.CancelledError:
+        pass
+
+    if usb_cdc_server is not None:
+        usb_cdc_server.stop()
+    usb_task.cancel()
+    try:
+        await usb_task
     except asyncio.CancelledError:
         pass
 

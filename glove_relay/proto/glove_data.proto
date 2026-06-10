@@ -22,3 +22,23 @@ message ReceiverPacket {
     GloveData right = 4;
     repeated float relative_features = 5; // [6]
 }
+
+message BaseStationStatus {
+    bool c6_connected = 1;
+    bool p4_ready = 2;
+    float cpu_usage = 3;
+    float mem_usage = 4;
+    uint32 uptime_s = 5;
+    uint32 active_tier = 6;  // 1=glove-only, 2=P4, 3=PC
+}
+
+message BaseStationPacket {
+    uint32 version = 1;
+    uint32 tick_id = 2;
+    GloveData left = 3;
+    GloveData right = 4;
+    repeated float relative_features = 5;  // [6]
+    uint32 tier2_gesture_id = 6;
+    float tier2_confidence = 7;
+    BaseStationStatus base_station = 8;
+}
