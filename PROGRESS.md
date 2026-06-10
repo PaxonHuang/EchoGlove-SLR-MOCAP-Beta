@@ -1,6 +1,36 @@
 # PROGRESS.md — Cross-Session State Tracker
 
-**Last updated**: 2026-06-03
+**Last updated**: 2026-06-10
+
+---
+
+## V5.2 P4 Smart Base Station (NEW)
+
+**Status**: Design spec + implementation plan written, awaiting execution
+**Branch**: V5-DualGloveFlex
+**Design Spec**: `docs/superpowers/specs/2026-06-10-v52-p4-base-station-design.md`
+**Implementation Plan**: `docs/superpowers/plans/2026-06-10-v52-p4-base-station.md`
+**Timeline**: 3 weeks (deadline June 2026)
+
+### Key Decisions
+- ESP32-P4-Function-EV-Board v1.5.2 as smart base station (competition-provided)
+- C6: ESP-NOW receiver + UART relay to P4
+- P4: Tier2 inference (TFLite Micro, 28-dim, ~80KB INT8) + LVGL 7" display + TTS audio + USB HS
+- UWB deferred to post-competition (V5.3)
+- Glove firmware: zero changes
+- 8 tasks total, TDD-first
+
+### Task Breakdown
+| Task | Description | Status |
+|------|-------------|--------|
+| 1 | Shared protocol library (UART framing) | Pending |
+| 2 | C6 ESP-NOW + UART relay firmware | Pending |
+| 3 | P4 UART receive + frame pairing + 28-dim assembly | Pending |
+| 4 | P4 Tier2 inference (TFLite Micro) | Pending |
+| 5 | P4 LVGL display UI | Pending |
+| 6 | P4 TTS audio + USB CDC | Pending |
+| 7 | PC relay USB CDC input extension | Pending |
+| 8 | Integration tests | Pending |
 
 ---
 
