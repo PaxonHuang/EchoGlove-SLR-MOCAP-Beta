@@ -7,8 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Design Spec: docs/superpowers/specs/2026-06-01-v5-dual-glove-flex-design.md
 - Implementation Plan: docs/superpowers/plans/2026-06-01-v5-dual-glove-flex.md
 - Architecture: 3x ESP32-S3, BNO085 + 5x Flex + 2x ADS1115, 3-tier inference
-- Test Status (2026-06-03): 156/156 pass (64 firmware + 12 receiver + 80 relay)
+- Test Status (2026-06-10): 168/168 pass (64 firmware + 12 receiver + 12 P4 native + 80 relay)
 - Phase Status: P0-P4, P6 done; P5/P7 need hardware
+- V5.2 P4 Base Station: 8/8 tasks done (commits f4e4d34..bef0c96), ready for hardware
 
 ### V5 Constants
 | Constant | Value |

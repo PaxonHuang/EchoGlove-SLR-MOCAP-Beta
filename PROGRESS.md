@@ -6,7 +6,7 @@
 
 ## V5.2 P4 Smart Base Station (NEW)
 
-**Status**: Design spec + implementation plan written, awaiting execution
+**Status**: All 8 tasks implemented ✅ — ready for hardware testing
 **Branch**: V5-DualGloveFlex
 **Design Spec**: `docs/superpowers/specs/2026-06-10-v52-p4-base-station-design.md`
 **Implementation Plan**: `docs/superpowers/plans/2026-06-10-v52-p4-base-station.md`
@@ -19,18 +19,33 @@
 - UWB deferred to post-competition (V5.3)
 - Glove firmware: zero changes
 - 8 tasks total, TDD-first
+- Model takes two 11-dim inputs (left, right) — not single 28-dim
+- RelativeFeatures.compute() skipped (needs quaternion not in GlovePacket) — uses compute_relative_from_imu() instead
 
 ### Task Breakdown
-| Task | Description | Status |
-|------|-------------|--------|
-| 1 | Shared protocol library (UART framing) | Pending |
-| 2 | C6 ESP-NOW + UART relay firmware | Pending |
-| 3 | P4 UART receive + frame pairing + 28-dim assembly | Pending |
-| 4 | P4 Tier2 inference (TFLite Micro) | Pending |
-| 5 | P4 LVGL display UI | Pending |
-| 6 | P4 TTS audio + USB CDC | Pending |
-| 7 | PC relay USB CDC input extension | Pending |
-| 8 | Integration tests | Pending |
+| Task | Description | Commit | Status |
+|------|-------------|--------|--------|
+| 1 | Shared protocol library (UART framing) | `f4e4d34` | ✅ 12/12 tests |
+| 2 | C6 ESP-NOW + UART relay firmware | `ef8d450` | ✅ |
+| 3 | P4 UART receive + frame pairing + 28-dim assembly | `b3b011a` | ✅ |
+| 4 | P4 Tier2 inference (TFLite Micro) | `ef1c84e` | ✅ (stub) |
+| 5 | P4 LVGL display UI | `350ddb8` | ✅ (stub) |
+| 6 | P4 TTS audio + USB CDC | `350ddb8` | ✅ (stub) |
+| 7 | PC relay USB CDC input extension | `62b65d3` | ✅ 88/88 tests |
+| 8 | Integration tests | `bef0c96` | ✅ |
+
+### Test Summary (V5.2 additions)
+| Component | New Tests | Total |
+|-----------|-----------|-------|
+| P4 native (UART frame + pairer + features) | 12 | 12 |
+| Relay (USB CDC + integration) | 8 | 88 |
+
+### Next Steps
+1. Hardware test: flash C6 firmware, verify ESP-NOW reception from gloves
+2. Hardware test: flash P4 firmware, verify UART C6→P4 data flow
+3. Run model export script (`glove_firmware/scripts/export_model.py`) when trained weights available
+4. Full LVGL BSP integration (needs P4 EV Board + 7" display)
+5. ES8311 I2S audio wiring (needs BSP audio component)
 
 ---
 
