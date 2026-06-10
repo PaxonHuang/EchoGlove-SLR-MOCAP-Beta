@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.cpp" "uart_receiver.cpp"
+    SRCS "main.cpp" "uart_receiver.cpp" "display_task.cpp" "audio_task.cpp" "usb_task.cpp"
     INCLUDE_DIRS "."
     REQUIRES driver esp_event
     PRIV_REQUIRES esp_timer shared tflite_micro

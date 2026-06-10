@@ -17,6 +17,9 @@
 #define HAS_MODEL 0
 #endif
 #include "tflite_infer.h"
+#include "display_task.h"
+#include "audio_task.h"
+#include "usb_task.h"
 
 static const char* TAG = "p4_main";
 
@@ -29,6 +32,13 @@ struct FeaturePair {
 };
 
 static QueueHandle_t s_inference_queue = nullptr;
+
+// Latest data for display updates (written by inference/uart tasks)
+static Tier2Result     s_last_result = {};
+static FramePair       s_last_pair   = {};
+static float           s_last_features[DUAL_HAND_FEATURES] = {};
+static BaseStationStatus s_last_status = {};
+static volatile bool   s_has_new_result = false;
 
 // Compute relative features from GlovePacket imu[6] (euler[3] + gyro[3]).
 // Cannot use RelativeFeatures.compute() -- it requires quaternion[4]
@@ -77,6 +87,18 @@ static void inference_task(void* arg) {
                          result.confidence,
                          (unsigned long)result.inference_us);
             }
+
+            // Store latest result for display
+            s_last_result = result;
+            s_has_new_result = true;
+
+            // Audio: play TTS if confident prediction
+            if (result.valid && result.confidence > 0.5f) {
+                audio_play_gesture(result.gesture_id);
+            }
+
+            // USB CDC: send result JSON
+            usb_task_send_result(&result, nullptr, nullptr);
         }
     }
 }
@@ -102,6 +124,10 @@ static void uart_task(void* arg) {
 
                 ESP_LOGI(TAG, "Pair tick=%lu feat[0]=%.3f feat[27]=%.3f",
                          (unsigned long)pair.tick_id, features[0], features[27]);
+
+                // Store latest pair + features for display
+                s_last_pair = pair;
+                memcpy(s_last_features, features, sizeof(s_last_features));
 
                 // Send left[11] and right[11] to inference task
                 // Tier2 model uses only flex+imu per hand, not relative features
@@ -137,14 +163,30 @@ extern "C" void app_main(void) {
     s_inference_queue = xQueueCreate(4, sizeof(FeaturePair));
     assert(s_inference_queue != nullptr);
 
+    // Initialize audio, USB, and display subsystems
+    audio_init();
+    usb_task_init();
+    display_init();
+
+    // Build initial status
+    s_last_status.p4_ready = true;
+    s_last_status.active_tier = 2;
+
     // Start UART receiver on core 0, inference on core 1
     uart_receiver_init(0, 37, 38, 2000000);
     xTaskCreatePinnedToCore(uart_task, "uart_rx", 8192, NULL, 3, NULL, 0);
     xTaskCreatePinnedToCore(inference_task, "inference", 8192, NULL, 2, NULL, 1);
 
-    ESP_LOGI(TAG, "P4 ready -- UART + inference tasks running");
+    ESP_LOGI(TAG, "P4 ready -- UART + inference + display running");
 
     while (1) {
+        // Update display when new inference result is available
+        if (s_has_new_result) {
+            display_update(&s_last_result, &s_last_pair,
+                           s_last_features, &s_last_status);
+            s_has_new_result = false;
+        }
+
         ESP_LOGI(TAG, "UART RX count: %lu", (unsigned long)uart_receiver_count());
         vTaskDelay(pdMS_TO_TICKS(5000));
     }
