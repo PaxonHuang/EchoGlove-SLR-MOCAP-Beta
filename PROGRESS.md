@@ -6,8 +6,17 @@
 
 ## V5.2 P4 Smart Base Station
 
-**Status**: All 8 tasks implemented ✅ — ready for hardware testing
-**Latest commit**: `82d3d15` (CLAUDE.md + docs cleanup)
+**Status**: All 8 tasks implemented ✅ — hardware testing in progress
+**Latest commit**: `4af33a4` (V5 main.cpp + ESP-NOW broadcast)
+
+### Hardware Testing Progress
+
+| Step | Description | Status | Commit/Notes |
+|------|-------------|--------|-------------|
+| 1a | S3 glove firmware build + flash | ✅ Done | `4af33a4`, port ttyACM1, ESP-NOW sending at 50Hz |
+| 1b | C6 co-processor build + flash | ⏳ Next | |
+| 1c | P4 firmware build + flash, verify UART | Pending | |
+| 2 | S3 hardware re-verify (sensors + I2C) | Pending | |
 **Branch**: V5-DualGloveFlex
 **Design Spec**: `docs/superpowers/specs/2026-06-10-v52-p4-base-station-design.md`
 **Implementation Plan**: `docs/superpowers/plans/2026-06-10-v52-p4-base-station.md`

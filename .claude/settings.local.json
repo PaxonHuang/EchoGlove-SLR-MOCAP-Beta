@@ -65,7 +65,15 @@
       "mcp__plugin_playwright_playwright__browser_snapshot",
       "mcp__plugin_playwright_playwright__browser_click",
       "mcp__plugin_playwright_playwright__browser_take_screenshot",
-      "Bash(xxd)"
+      "Bash(xxd)",
+      "Bash(lsusb)",
+      "Bash(/usr/bin/python3 -m esptool --port /dev/ttyACM0 chip_id)",
+      "Bash(~/.platformio/packages/tool-esptoolpy/esptool.py --port /dev/ttyACM0 chip_id)",
+      "Bash(~/.platformio/packages/tool-esptoolpy/esptool.py --port /dev/ttyACM1 chip_id)",
+      "Bash(idf.py --version)",
+      "Read(//home/paxon/.espressif/**)",
+      "Read(//home/paxon/**)",
+      "Bash(./install.sh esp32c6,esp32p4)"
     ]
   }
 }
