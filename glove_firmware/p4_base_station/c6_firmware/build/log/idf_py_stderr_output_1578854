@@ -1,0 +1,8 @@
+CMake Error at /home/paxon/esp/esp-idf/tools/cmake/project.cmake:465 (message):
+  Directory specified in EXTRA_COMPONENT_DIRS doesn't exist:
+  /home/paxon/CodingProjects/EchoGloveProjects/EchoGlove-SLR-MOCAP/glove_firmware/p4_base_station/shared
+Call Stack (most recent call first):
+  /home/paxon/esp/esp-idf/tools/cmake/project.cmake:549 (__project_init)
+  CMakeLists.txt:4 (project)
+
+
