@@ -18,9 +18,8 @@
 
 #include <cstdint>
 #include <cstring>
-#ifndef UNIT_TEST
-#include <Arduino.h>
-#else
+#if defined(UNIT_TEST)
+// Stubs for native test builds
 #ifndef PROGMEM
 #define PROGMEM
 #endif
@@ -38,6 +37,13 @@ struct _SerialStub {
     }
 };
 static _SerialStub Serial;
+#elif defined(ESP_PLATFORM)
+// ESP-IDF build (P4, C6) — no Arduino
+#include <type_traits>
+#define ps_malloc malloc
+#else
+// Arduino build (S3 glove firmware)
+#include <Arduino.h>
 #endif
 
 // ── V5.0 Constants ──────────────────────────────────────────────
