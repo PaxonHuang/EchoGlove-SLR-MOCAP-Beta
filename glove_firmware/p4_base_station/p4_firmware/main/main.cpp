@@ -141,7 +141,8 @@ static void uart_task(void* arg) {
                 xQueueSend(s_inference_queue, &fp, 0);
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(1));
+        // When no data, yield longer to avoid watchdog on idle task
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 

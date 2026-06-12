@@ -8,16 +8,21 @@
 
 **状态**: 全部 8 个任务实现 ✅ — 硬件测试进行中
 **分支**: V5-DualGloveFlex
-**最新提交**: `4af33a4` (V5 main.cpp + ESP-NOW 广播)
+**最新提交**: `2dbe1e9` (ESP-IDF v5.4 构建修复)
+
+### 环境搭建 (2026-06-10)
+- ESP-IDF v5.4 安装在 `~/esp/esp-idf/`
+- C6 固件构建成功: `idf.py set-target esp32c6 && idf.py build`
+- 激活环境: `source ~/esp/esp-idf/export.sh`
 
 ### 硬件测试进度
 
 | 步骤 | 描述 | 状态 | 备注 |
 |------|------|------|------|
 | 1a | S3 手套固件构建 + 烧录 | ✅ 完成 | `4af33a4`，端口 ttyACM1，ESP-NOW 50Hz 发送 |
-| 1b | C6 协处理器构建 + 烧录 | ⏳ 下一步 | |
-| 1c | P4 固件构建 + 烧录，验证 UART | 待定 | |
-| 2 | S3 硬件重新验证（传感器 + I2C） | 待定 | |
+| 1b | C6 协处理器构建 + 烧录 | ⏳ 阻塞（需要 3.3V USB-TTL 模块） | 构建成功 |
+| 1c | P4 固件构建 + 烧录，验证 UART | ✅ 完成 | `ttyACM0`，所有子系统正常，watchdog 修复已应用 |
+| 2 | S3 硬件重新验证（传感器 + I2C） | 下一步 | 新面包板准备组装 |
 
 ### 设备端口映射
 
@@ -58,12 +63,23 @@
 
 ### 下一步
 
-1. **硬件测试**：刷写 C6 固件，验证 ESP-NOW 接收手套数据
-2. **硬件测试**：刷写 P4 固件，验证 UART C6→P4 数据流
-3. **模型导出**：运行 `python glove_firmware/scripts/export_model.py`（需要训练好的权重）
-4. **LVGL BSP**：集成 P4 EV Board 7 寸 MIPI-DSI 显示屏
-5. **ES8311 音频**：通过 `esp_codec_dev` BSP 组件连接 I2S
-6. **竞赛演示**：全系统集成 + 演示脚本
+1. ✅ **P4 刷写验证**：完成 — 所有子系统初始化，watchdog 修复已应用
+2. **S3 传感器重验**：组装新面包板 → I2C 扫描 → 弯曲传感器测试
+3. **C6 刷写**：使用 USB-TTL 模块（3.3V!）刷写 C6 固件
+4. **C6→P4 UART 链路**：验证端到端数据流
+5. **模型导出**：运行 `python glove_firmware/scripts/export_model.py`（需要训练好的权重）
+6. **LVGL BSP**：集成 P4 EV Board 7 寸 MIPI-DSI 显示屏
+7. **ES8311 音频**：通过 `esp_codec_dev` BSP 组件连接 I2S
+8. **竞赛演示**：全系统集成 + 演示脚本
+
+### P4 验证详情 (2026-06-12)
+- **端口**: /dev/ttyACM0 (MAC 30:ED:A0:E2:24:B7, 芯片版本 v1.3)
+- **启动**: ESP-IDF v5.4, 32MB PSRAM 检测, 所有子系统正常
+- **修复内容**:
+  - `uart_receiver.cpp`: 将 `s_port` 强制转换为 `uart_port_t` (ESP-IDF v5.4 严格类型)
+  - `display_task.h`: 添加 `#include "FramePairer.h"` 引入 `FramePair` 类型
+  - `main.cpp`: uart_task 延迟从 1ms 增加到 10ms (无 C6 数据时修复 watchdog)
+- **预期警告**: model_data.h 未找到 (stub), lvgl.h 未找到 (仅日志模式)
 
 ---
 

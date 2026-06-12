@@ -7,16 +7,21 @@
 ## V5.2 P4 Smart Base Station
 
 **Status**: All 8 tasks implemented ✅ — hardware testing in progress
-**Latest commit**: `4af33a4` (V5 main.cpp + ESP-NOW broadcast)
+**Latest commit**: `2dbe1e9` (ESP-IDF v5.4 build fixes)
+
+### Environment Setup (2026-06-10)
+- ESP-IDF v5.4 installed at `~/esp/esp-idf/`
+- C6 firmware builds: `idf.py set-target esp32c6 && idf.py build` (OK)
+- Source env: `source ~/esp/esp-idf/export.sh`
 
 ### Hardware Testing Progress
 
 | Step | Description | Status | Commit/Notes |
 |------|-------------|--------|-------------|
 | 1a | S3 glove firmware build + flash | ✅ Done | `4af33a4`, port ttyACM1, ESP-NOW sending at 50Hz |
-| 1b | C6 co-processor build + flash | ⏳ Next | |
-| 1c | P4 firmware build + flash, verify UART | Pending | |
-| 2 | S3 hardware re-verify (sensors + I2C) | Pending | |
+| 1b | C6 co-processor build + flash | ⏳ Blocked (needs USB-TTL adapter) | Build OK, needs 3.3V USB-TTL module |
+| 1c | P4 firmware build + flash, verify UART | ✅ Done | `ttyACM0`, all subsystems OK, watchdog fix applied |
+| 2 | S3 hardware re-verify (sensors + I2C) | Next | New breadboard ready to assemble |
 **Branch**: V5-DualGloveFlex
 **Design Spec**: `docs/superpowers/specs/2026-06-10-v52-p4-base-station-design.md`
 **Implementation Plan**: `docs/superpowers/plans/2026-06-10-v52-p4-base-station.md`
@@ -51,12 +56,23 @@
 | Relay (USB CDC + integration) | 8 | 88 |
 
 ### Next Steps
-1. **Hardware test**: flash C6 firmware, verify ESP-NOW reception from gloves
-2. **Hardware test**: flash P4 firmware, verify UART C6→P4 data flow
-3. **Model export**: run `python glove_firmware/scripts/export_model.py` when trained weights available
-4. **LVGL BSP**: integrate with P4 EV Board 7" MIPI-DSI display
-5. **ES8311 audio**: wire I2S via `esp_codec_dev` BSP component
-6. **Competition demo**: full system integration + demo script
+1. ✅ **P4 flash + verify**: DONE — all subsystems init, watchdog fix applied
+2. **S3 sensor re-verify**: assemble new breadboard → I2C scan → flex sensor test
+3. **C6 flash**: use USB-TTL module (3.3V!) to flash C6 firmware
+4. **C6→P4 UART link**: verify end-to-end data flow
+5. **Model export**: run `python glove_firmware/scripts/export_model.py` when trained weights available
+6. **LVGL BSP**: integrate with P4 EV Board 7" MIPI-DSI display
+7. **ES8311 audio**: wire I2S via `esp_codec_dev` BSP component
+8. **Competition demo**: full system integration + demo script
+
+### P4 Verification Details (2026-06-12)
+- **Port**: /dev/ttyACM0 (MAC 30:ED:A0:E2:24:B7, chip rev v1.3)
+- **Boot**: ESP-IDF v5.4, 32MB PSRAM detected, all subsystems OK
+- **Fixes applied**:
+  - `uart_receiver.cpp`: cast `s_port` to `uart_port_t` (ESP-IDF v5.4 strict types)
+  - `display_task.h`: add `#include "FramePairer.h"` for `FramePair` type
+  - `main.cpp`: increase uart_task delay 1ms→10ms (watchdog fix when no C6 data)
+- **Expected warnings**: model_data.h not found (stub), lvgl.h not found (log-only mode)
 
 ---
 

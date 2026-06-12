@@ -15,6 +15,7 @@
 #include "tflite_infer.h"
 #include "data_structures.h"
 #include "p4_protocol.h"
+#include "FramePairer.h"
 
 #ifdef __cplusplus
 extern "C" {

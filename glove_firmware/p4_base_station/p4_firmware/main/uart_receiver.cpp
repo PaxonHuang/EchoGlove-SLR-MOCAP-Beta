@@ -21,15 +21,15 @@ bool uart_receiver_init(int uart_port, int tx_pin, int rx_pin, int baud) {
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
         .source_clk = UART_SCLK_DEFAULT,
     };
-    ESP_ERROR_CHECK(uart_driver_install(s_port, 2048, 512, 0, NULL, 0));
-    ESP_ERROR_CHECK(uart_param_config(s_port, &cfg));
-    ESP_ERROR_CHECK(uart_set_pin(s_port, tx_pin, rx_pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    ESP_ERROR_CHECK(uart_driver_install(static_cast<uart_port_t>(s_port), 2048, 512, 0, NULL, 0));
+    ESP_ERROR_CHECK(uart_param_config(static_cast<uart_port_t>(s_port), &cfg));
+    ESP_ERROR_CHECK(uart_set_pin(static_cast<uart_port_t>(s_port), tx_pin, rx_pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     ESP_LOGI(TAG, "UART%d init: TX=%d RX=%d baud=%d", s_port, tx_pin, rx_pin, baud);
     return true;
 }
 
 bool uart_receiver_poll(GlovePacket* out) {
-    int avail = uart_read_bytes(s_port, s_buf + s_buf_len, sizeof(s_buf) - s_buf_len, 0);
+    int avail = uart_read_bytes(static_cast<uart_port_t>(s_port), s_buf + s_buf_len, sizeof(s_buf) - s_buf_len, 0);
     if (avail > 0) s_buf_len += avail;
 
     size_t consumed = 0;
