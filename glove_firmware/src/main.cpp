@@ -24,6 +24,7 @@
 #include <WiFi.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
+#include <Wire.h>
 
 #include "data_structures.h"
 #include "Sensors/SensorManager.h"
@@ -32,7 +33,7 @@
 static constexpr HandID    MY_HAND      = HAND_LEFT;   // Change per glove
 static constexpr uint32_t  SENSOR_HZ    = 100;
 static constexpr uint32_t  COMMS_HZ     = 50;
-static constexpr bool      SIMULATION   = true;         // Set false for real hardware
+static constexpr bool      SIMULATION   = false;        // Hardware mode — real sensors
 
 // ── Broadcast address (send to all) ────────────────────────────
 static const uint8_t BROADCAST_ADDR[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -109,15 +110,13 @@ static void Task_Comms(void *pvParameters) {
             }
         }
 
-        // Print status every 1 second
+        // Print sensor data every 1 second
         uint32_t now = millis();
         if (now - g_last_print_ms >= 1000) {
             g_last_print_ms = now;
-            Serial.printf("[V5] hand=%s seq=%u sent=%u gesture=%s sim=%d\n",
-                          MY_HAND == HAND_LEFT ? "LEFT" : "RIGHT",
-                          pkt.tick_id, g_packets_sent,
-                          g_sensors.gestureName(g_sensors.currentGesture()),
-                          g_sensors.isSimulation() ? 1 : 0);
+            // Debug: print raw ADC values for calibration
+            Serial.printf("[V5] flex=[%.4f %.4f %.4f %.4f %.4f]\n",
+                          pkt.flex[0], pkt.flex[1], pkt.flex[2], pkt.flex[3], pkt.flex[4]);
         }
     }
 }

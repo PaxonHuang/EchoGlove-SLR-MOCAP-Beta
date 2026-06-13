@@ -1,15 +1,19 @@
 /* =============================================================================
- * EchoGlove V5 — Sensor Manager (Simulation Mode)
+ * EchoGlove V5 — Sensor Manager
  * =============================================================================
- * Pure-simulation SensorManager for V5 firmware.
+ * Unified sensor manager for V5 firmware.
  *
- * Hardware sensors (TMAG5273, TCA9548A) have been removed. This module
- * generates synthetic 11-dimensional data:
+ * Hardware mode (simulation=false):
+ *   - Flex sensors: 5x Spectra Symbol via 2x ADS1115 (0x48, 0x49)
+ *   - IMU: BNO085 (0x4B) via Adafruit BNO08x library
+ *   - I2C bus: flat, GPIO8=SDA, GPIO9=SCL, 100kHz
+ *
+ * Simulation mode (simulation=true):
+ *   - Generates synthetic 11-dimensional data with 20 gesture signatures
+ *   - No I2C hardware access
+ *
+ * Output: 11-dim feature vector per hand:
  *   flex[5] + euler[3] + gyro[3]  =  SINGLE_HAND_FEATURES (11)
- *
- * 20 gesture signatures are built-in. Each gesture has a distinct flex
- * pattern plus characteristic euler/gyro values. Use setSimulatedGesture()
- * to pin a specific gesture, or let it auto-cycle.
  * =============================================================================
  */
 
@@ -20,6 +24,10 @@
 
 #ifndef UNIT_TEST
 #include <Arduino.h>
+#include <Wire.h>
+#include <Adafruit_BNO08x.h>
+#include "ADS1115Manager.h"
+#include "FlexManager.h"
 #else
 // Stubs for native test builds
 static uint32_t _sim_millis = 0;
@@ -31,16 +39,6 @@ static inline uint32_t esp_random() { return (uint32_t)rand(); }
 class SensorManager {
 public:
     static constexpr int NUM_GESTURES = 20;
-
-    // =========================================================================
-    // Gesture Signature
-    // =========================================================================
-    //
-    // Each gesture defines:
-    //   flex[5]  — per-finger flex values [0=open, 1=curled]
-    //              finger order: thumb, index, middle, ring, pinky
-    //   roll, pitch, yaw  — characteristic wrist orientation (degrees)
-    //   gx, gy, gz        — characteristic gyro values (deg/s)
 
     struct GestureSignature {
         float flex[NUM_FLEX_SENSORS];
@@ -64,11 +62,6 @@ public:
     // Initialization
     // =========================================================================
 
-    /**
-     * @brief Initialize the sensor manager.
-     * @param simulation  If true, forces simulation mode (no I2C/hardware).
-     * @return true if initialized.
-     */
     bool begin(bool simulation = true) {
         _simulation_mode = simulation;
         _initialized = true;
@@ -80,11 +73,26 @@ public:
         Serial.println("========================================");
         Serial.printf("[SensorManager] V5 init: mode=%s\n",
                       _simulation_mode ? "SIMULATION" : "HARDWARE");
-        Serial.printf("[SensorManager] %d gesture signatures loaded\n",
-                      NUM_GESTURES);
+
+        if (!_simulation_mode) {
+            // ── Initialize ADS1115 (flex sensors) ──
+            // ADS1115Manager.begin() calls Wire.begin() internally
+            bool adc_ok = _adc.begin(false);
+            Serial.printf("[SensorManager] ADS1115: %s\n", adc_ok ? "OK" : "FAIL");
+
+            // ── Initialize FlexManager with ADS1115 ──
+            _flex.begin(&_adc);
+            Serial.println("[SensorManager] FlexManager: linked to ADS1115");
+
+            // ── BNO085 IMU: SKIP for now — debug ADS1115 first ──
+            _bno_ok = false;
+            Serial.println("[SensorManager] BNO085: SKIPPED (debugging ADS1115)");
+            // TODO: Re-enable after ADS1115 is verified
+        }
+
+        Serial.printf("[SensorManager] %d gesture signatures loaded\n", NUM_GESTURES);
         Serial.println("========================================");
 #endif
-
         return true;
     }
 
@@ -92,11 +100,6 @@ public:
     // Sensor Reading
     // =========================================================================
 
-    /**
-     * @brief Read all sensors and return a filled SensorData struct.
-     * In simulation mode, generates synthetic gesture data.
-     * @return Filled SensorData with incrementing seq and valid values.
-     */
     SensorData read() {
         SensorData data;
         data.zero();
@@ -106,18 +109,17 @@ public:
 
         if (_simulation_mode) {
             generateSimulated(data);
+        } else {
+            readHardware(data);
         }
 
         return data;
     }
 
     // =========================================================================
-    // Gesture Control
+    // Gesture Control (simulation only)
     // =========================================================================
 
-    /**
-     * @brief Pin the simulation to a specific gesture (0-19).
-     */
     void setSimulatedGesture(int gesture_id) {
         if (gesture_id >= 0 && gesture_id < NUM_GESTURES) {
             _sim_gesture_id = (uint8_t)gesture_id;
@@ -132,7 +134,6 @@ public:
     bool isSimulation() const { return _simulation_mode; }
     uint8_t currentGesture() const { return _sim_gesture_id; }
 
-    // Gesture name lookup (for debug/logging)
     static const char* gestureName(uint8_t id) {
         static const char* names[NUM_GESTURES] = {
             "open_hand",        "fist",             "thumbs_up",
@@ -158,54 +159,60 @@ private:
     uint8_t   _sim_gesture_id;
     uint32_t  _sim_frame_counter;
 
+#ifndef UNIT_TEST
+    // Hardware drivers
+    ADS1115Manager  _adc;
+    FlexManager     _flex;
+    Adafruit_BNO08x _bno;
+    bool            _bno_ok = false;
+#endif
+
     // =========================================================================
-    // Gesture Table (local static in generateSimulated — ODR-safe, C++14 OK)
+    // Hardware Reading
     // =========================================================================
 
-    static const GestureSignature* gestures() {
-        static const GestureSignature table[NUM_GESTURES] = {
-            //  0: open_hand     — all fingers extended
-            {{0.05f, 0.05f, 0.05f, 0.05f, 0.05f},   0,  0,  0,  0, 0, 0},
-            //  1: fist           — all fingers fully curled
-            {{0.90f, 0.90f, 0.90f, 0.90f, 0.90f},   0,  0,  0,  0, 0, 0},
-            //  2: thumbs_up      — thumb extended, rest curled
-            {{0.10f, 0.85f, 0.85f, 0.85f, 0.85f}, -45,  0,  0,  0, 0, 0},
-            //  3: peace          — index+middle extended, rest curled
-            {{0.80f, 0.10f, 0.10f, 0.80f, 0.80f},   0,  0,  0,  0, 0, 0},
-            //  4: point          — index extended, rest curled
-            {{0.85f, 0.10f, 0.85f, 0.85f, 0.85f},   0,  0,  0,  0, 0, 0},
-            //  5: ok_sign        — thumb+index touch, rest extended
-            {{0.50f, 0.50f, 0.05f, 0.05f, 0.05f},   0,  0,  0,  0, 0, 0},
-            //  6: three_fingers  — thumb+index+middle extended
-            {{0.10f, 0.10f, 0.10f, 0.85f, 0.85f},   0,  0,  0,  0, 0, 0},
-            //  7: pinky_up       — pinky extended, rest curled
-            {{0.85f, 0.85f, 0.85f, 0.85f, 0.10f},   0,  0,  0,  0, 0, 0},
-            //  8: l_shape        — thumb+index form L, rest curled
-            {{0.10f, 0.10f, 0.85f, 0.85f, 0.85f},   0,  0,  0,  0, 0, 0},
-            //  9: grab           — mid-curl all fingers
-            {{0.65f, 0.65f, 0.65f, 0.65f, 0.65f},   0,  0,  0,  0, 0, 0},
-            // 10: pinch          — thumb+index pinch, others extended
-            {{0.45f, 0.45f, 0.05f, 0.05f, 0.05f},   0,  0,  0,  0, 0, 0},
-            // 11: wave           — open hand, wrist tilted
-            {{0.05f, 0.05f, 0.05f, 0.05f, 0.05f},  30,  0,  0,  5, 0, 0},
-            // 12: flat_hand      — all fingers straight, palm down
-            {{0.05f, 0.05f, 0.05f, 0.05f, 0.05f},   0, 90,  0,  0, 0, 0},
-            // 13: claw           — fingers half-curled, aggressive
-            {{0.55f, 0.55f, 0.55f, 0.55f, 0.55f},   0, 20,  0,  0, 0, 0},
-            // 14: hook           — index+middle hooked, rest curled
-            {{0.80f, 0.70f, 0.70f, 0.10f, 0.10f},   0,  0,  0,  0, 0, 0},
-            // 15: fingers_spread — all fingers spread wide
-            {{0.05f, 0.05f, 0.05f, 0.05f, 0.05f},   0,  0, 30,  0, 0, 0},
-            // 16: two_fingers_up — index+middle up (vertical)
-            {{0.85f, 0.10f, 0.10f, 0.85f, 0.85f},   0,  0,  0,  0, 5, 0},
-            // 17: fist_thumb_out — fist with thumb sticking out
-            {{0.10f, 0.90f, 0.90f, 0.90f, 0.90f},   0,  0,  0,  0, 0, 0},
-            // 18: half_curl      — all fingers at 50%
-            {{0.50f, 0.50f, 0.50f, 0.50f, 0.50f},   0,  0,  0,  0, 0, 0},
-            // 19: thumbs_down    — thumb curled down, rest extended
-            {{0.90f, 0.05f, 0.05f, 0.05f, 0.05f},  45,  0,  0,  0, 0, 0},
-        };
-        return table;
+    void readHardware(SensorData& data) {
+#ifndef UNIT_TEST
+        // ── Flex sensors (ADS1115) ──
+        _flex.read(data.flex);
+
+        // ── IMU (BNO085) ──
+        if (_bno_ok) {
+            sh2_SensorValue_t sensor;
+            float qw = 1, qx = 0, qy = 0, qz = 0;
+            bool got_quat = false;
+
+            // Read all available reports
+            while (_bno.getSensorEvent(&sensor)) {
+                if (sensor.sensorId == SH2_ROTATION_VECTOR) {
+                    qw = sensor.un.rotationVector.real;
+                    qx = sensor.un.rotationVector.i;
+                    qy = sensor.un.rotationVector.j;
+                    qz = sensor.un.rotationVector.k;
+                    got_quat = true;
+                }
+                if (sensor.sensorId == SH2_GYROSCOPE_CALIBRATED) {
+                    data.gyro[0] = sensor.un.gyroscope.x * 57.2958f; // rad/s → deg/s
+                    data.gyro[1] = sensor.un.gyroscope.y * 57.2958f;
+                    data.gyro[2] = sensor.un.gyroscope.z * 57.2958f;
+                }
+            }
+
+            // Store quaternion
+            data.quaternion[0] = qw;
+            data.quaternion[1] = qx;
+            data.quaternion[2] = qy;
+            data.quaternion[3] = qz;
+
+            // Quaternion → Euler (ZYX convention)
+            if (got_quat) {
+                data.euler[0] = atan2f(2*(qw*qx + qy*qz), 1 - 2*(qx*qx + qy*qy)) * 57.2958f;
+                float sinp = 2*(qw*qy - qz*qx);
+                data.euler[1] = (fabsf(sinp) >= 1) ? copysignf(90.0f, sinp) * 57.2958f : asinf(sinp) * 57.2958f;
+                data.euler[2] = atan2f(2*(qw*qz + qx*qy), 1 - 2*(qy*qy + qz*qz)) * 57.2958f;
+            }
+        }
+#endif
     }
 
     // =========================================================================
@@ -217,7 +224,6 @@ private:
 
         const GestureSignature& g = gestures()[_sim_gesture_id];
 
-        // Add small sensor noise for realism
         const float flex_noise = 0.02f;
         const float euler_noise = 1.5f;
         const float gyro_noise = 0.3f;
@@ -227,7 +233,6 @@ private:
             data.flex[i] = clampf(g.flex[i] + n, 0.0f, 1.0f);
         }
 
-        // euler: roll, pitch, yaw stored consecutively in struct
         data.euler[0] = g.roll + randomNoise(euler_noise);
         data.euler[1] = g.pitch + randomNoise(euler_noise);
         data.euler[2] = g.yaw + randomNoise(euler_noise);
@@ -236,11 +241,40 @@ private:
         data.gyro[1] = g.gy + randomNoise(gyro_noise);
         data.gyro[2] = g.gz + randomNoise(gyro_noise);
 
-        // Quaternion: identity (w=1, x=y=z=0)
         data.quaternion[0] = 1.0f;
         data.quaternion[1] = 0.0f;
         data.quaternion[2] = 0.0f;
         data.quaternion[3] = 0.0f;
+    }
+
+    // =========================================================================
+    // Gesture Table
+    // =========================================================================
+
+    static const GestureSignature* gestures() {
+        static const GestureSignature table[NUM_GESTURES] = {
+            {{0.05f, 0.05f, 0.05f, 0.05f, 0.05f},   0,  0,  0,  0, 0, 0},
+            {{0.90f, 0.90f, 0.90f, 0.90f, 0.90f},   0,  0,  0,  0, 0, 0},
+            {{0.10f, 0.85f, 0.85f, 0.85f, 0.85f}, -45,  0,  0,  0, 0, 0},
+            {{0.80f, 0.10f, 0.10f, 0.80f, 0.80f},   0,  0,  0,  0, 0, 0},
+            {{0.85f, 0.10f, 0.85f, 0.85f, 0.85f},   0,  0,  0,  0, 0, 0},
+            {{0.50f, 0.50f, 0.05f, 0.05f, 0.05f},   0,  0,  0,  0, 0, 0},
+            {{0.10f, 0.10f, 0.10f, 0.85f, 0.85f},   0,  0,  0,  0, 0, 0},
+            {{0.85f, 0.85f, 0.85f, 0.85f, 0.10f},   0,  0,  0,  0, 0, 0},
+            {{0.10f, 0.10f, 0.85f, 0.85f, 0.85f},   0,  0,  0,  0, 0, 0},
+            {{0.65f, 0.65f, 0.65f, 0.65f, 0.65f},   0,  0,  0,  0, 0, 0},
+            {{0.45f, 0.45f, 0.05f, 0.05f, 0.05f},   0,  0,  0,  0, 0, 0},
+            {{0.05f, 0.05f, 0.05f, 0.05f, 0.05f},  30,  0,  0,  5, 0, 0},
+            {{0.05f, 0.05f, 0.05f, 0.05f, 0.05f},   0, 90,  0,  0, 0, 0},
+            {{0.55f, 0.55f, 0.55f, 0.55f, 0.55f},   0, 20,  0,  0, 0, 0},
+            {{0.80f, 0.70f, 0.70f, 0.10f, 0.10f},   0,  0,  0,  0, 0, 0},
+            {{0.05f, 0.05f, 0.05f, 0.05f, 0.05f},   0,  0, 30,  0, 0, 0},
+            {{0.85f, 0.10f, 0.10f, 0.85f, 0.85f},   0,  0,  0,  0, 5, 0},
+            {{0.10f, 0.90f, 0.90f, 0.90f, 0.90f},   0,  0,  0,  0, 0, 0},
+            {{0.50f, 0.50f, 0.50f, 0.50f, 0.50f},   0,  0,  0,  0, 0, 0},
+            {{0.90f, 0.05f, 0.05f, 0.05f, 0.05f},  45,  0,  0,  0, 0, 0},
+        };
+        return table;
     }
 
     // =========================================================================
