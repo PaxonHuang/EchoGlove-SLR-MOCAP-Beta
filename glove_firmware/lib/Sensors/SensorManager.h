@@ -75,8 +75,30 @@ public:
                       _simulation_mode ? "SIMULATION" : "HARDWARE");
 
         if (!_simulation_mode) {
+            // ── Initialize I2C bus first ──
+            Wire.begin(I2CPins::SDA, I2CPins::SCL, I2CPins::FREQ);
+            Serial.printf("[SensorManager] I2C bus init: SDA=%d SCL=%d %dkHz\n",
+                          I2CPins::SDA, I2CPins::SCL, I2CPins::FREQ / 1000);
+
+            // ── I2C Bus Scan (verify devices before init) ──
+            Serial.println("[SensorManager] Scanning I2C bus...");
+            int found = 0;
+            for (uint8_t addr = 1; addr < 127; addr++) {
+                Wire.beginTransmission(addr);
+                uint8_t err = Wire.endTransmission();
+                if (err == 0) {
+                    Serial.printf("  ✓ Found device at 0x%02X", addr);
+                    if (addr == 0x48) Serial.print("  (ADS1115 #1)");
+                    else if (addr == 0x49) Serial.print("  (ADS1115 #2)");
+                    else if (addr == 0x4B) Serial.print("  (BNO085)");
+                    Serial.println();
+                    found++;
+                }
+            }
+            Serial.printf("[SensorManager] I2C scan: %d device(s) found\n", found);
+
             // ── Initialize ADS1115 (flex sensors) ──
-            // ADS1115Manager.begin() calls Wire.begin() internally
+            // Note: ADS1115Manager.begin() will call Wire.begin() again, but that's OK
             bool adc_ok = _adc.begin(false);
             Serial.printf("[SensorManager] ADS1115: %s\n", adc_ok ? "OK" : "FAIL");
 
