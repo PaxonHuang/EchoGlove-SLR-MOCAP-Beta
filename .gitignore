@@ -69,3 +69,22 @@ glove_relay/proto/glove_data_pb2.py
 glove_relay/models/*.pt
 glove_relay/models/*.jit
 glove_relay/models/*.tflite
+
+# === V5 Cleanup Additions ===
+
+# ESP-IDF build artifacts
+**/build/
+sdkconfig.old
+
+# Diagnostic temp files
+*.diag_*
+*.back
+
+# Session continuation dumps (Claude Code)
+2026-*-this-session-*.txt
+2026-*-command-message*.txt
+temp_search.txt
+
+# Binary archives (don't store in git)
+*.zip
+*.rar
