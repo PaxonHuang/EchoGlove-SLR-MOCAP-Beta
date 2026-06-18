@@ -474,3 +474,43 @@ Firmware `.proto` established as single source of truth. Relay's `glove_data.pro
 ### Dependencies Installed
 
 `fastapi`, `websockets`, `pyyaml`, `numpy`, `protobuf`, `grpcio-tools`, `pytest`, `pytest-asyncio`, `torch` (CPU)
+
+---
+
+## 2026-06-18 — BNO085 Diagnostic Session (N16R8 + GY-BNO085)
+
+**Status:** Two SOP/code bugs identified & fixed; diagnostic firmware deployed; awaiting hardware flash + serial output.
+
+### Bugs Found & Fixed
+
+**Bug 1: `platformio.ini` wrong board config (CRITICAL)**
+- Symptom: env named `-n16r8` but configured like N8 (no PSRAM, 8MB flash, qio)
+- File: `glove_firmware/platformio.ini` lines 14-19
+- Fix: `default_16MB.csv` + `psram=enable` (kept `qio` flash_mode since N16R8 uses Quad flash + Quad PSRAM, not Octal)
+- Impact: PSRAM was not initialized; heap/buffer failures could corrupt Wire state
+- Build verified: `pio run` → SUCCESS (RAM 6.8%, Flash 4.7%)
+
+**Bug 2: `main.cpp` pin violation vs SOP**
+- Symptom: SDA=11, SCL=12, INT=9, RST=10 (all wrong, deviated from SOP)
+- SOP requirement: SDA=8, SCL=9, INT=1, RST=-1 (hardwired 3V3)
+- File: `glove_firmware/src/main.cpp`
+- Fix: replaced with SOP-compliant 5-phase diagnostic firmware (Phase 0/1/1.5/2/3)
+- Backup: `glove_firmware/src/main.cpp.diag_v1`
+
+### Diagnostic Firmware Capabilities
+- Phase 0: print SOP pin map + manual checklist
+- Phase 1: I²C scan at 100/50/10 kHz (multi-frequency fallback)
+- Phase 1.5: raw register read from 0x4B
+- Phase 2: `begin_I2C()` + enable ROTATION_VECTOR (100Hz) + ACCELEROMETER (50Hz)
+- Phase 3: 10s streaming with `wasReset()` watchdog
+
+### Next Steps
+1. Flash: `cd glove_firmware && pio run -t upload --upload-port COMx`
+2. Monitor: `pio device monitor -b 115200`
+3. Copy full output for Phase-by-Phase analysis
+4. If Phase 1 empty → re-verify wiring (4.7kΩ pull-ups, ADO=3V3, PS0=3V3, PS1=GND, RST=3V3)
+5. If Phase 2 fails → 5s power cycle then retry (BNO085 boot settling ~500ms)
+
+### Reference
+- Plan: `docs/superpowers/plans/2026-06-18-bno085-diagnostic-firmware.md`
+- SOP docs (verified consistent): `docs/HARDWARE_ASSEMBLY_GUIDE.md`, `docs/HARDWARE_WIRING_DEBUG_GUIDE_DM40B_CN.md`
