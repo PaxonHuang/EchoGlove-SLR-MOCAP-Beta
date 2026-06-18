@@ -79,7 +79,14 @@
       "mcp__espressif-docs__search_espressif_sources",
       "Bash(udevadm info *)",
       "Bash(~/.platformio/penv/.done)",
-      "Bash(~/.platformio/penv/bin/pio run *)"
+      "Bash(~/.platformio/penv/bin/pio run *)",
+      "Bash(dir \"H:\\\\HandSignRecognition\\\\Beta\\\\EchoGlove-SLR-MOCAP-Beta\\\\glove_firmware\")",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"H:\\\\HandSignRecognition\\\\Beta\\\\EchoGlove-SLR-MOCAP-Beta\\\\glove_firmware\\\\reset_and_capture.ps1\")",
+      "Bash(powershell -Command \"[System.IO.Ports.SerialPort]::GetPortNames\\(\\)\")",
+      "Bash(powershell -Command \"Get-PnpDevice -Class Ports -ErrorAction SilentlyContinue | Format-Table FriendlyName, Status\")",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"H:\\\\HandSignRecognition\\\\Beta\\\\EchoGlove-SLR-MOCAP-Beta\\\\glove_firmware\\\\check_com7.ps1\")",
+      "Bash(powershell -Command \"Get-PnpDevice -Class Ports -ErrorAction SilentlyContinue | Format-Table FriendlyName, Status -AutoSize\")",
+      "Bash(\"C:\\\\Users\\\\QuenchKidney\\\\.platformio\\\\packages\\\\tool-esptoolpy\\\\esptool.py\" --chip esp32s3 --port COM7 chip_id)"
     ]
   }
 }
