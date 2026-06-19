@@ -54,7 +54,7 @@ static void bus_recovery() {
 static void print_pin_map() {
     Serial.printf("SDA=GPIO%d  SCL=GPIO%d  INT=GPIO%d  RST=%s  ADDR=0x%02X  I2C=%lu Hz\n",
                   I2C_SDA, I2C_SCL, BNO085_INT_PIN,
-                  (BNO085_RST_PIN < 0) ? "HARDWIRED" : String(BNO085_INT_PIN).c_str(),
+                  (BNO085_RST_PIN < 0) ? "HARDWIRED" : String(BNO085_RST_PIN).c_str(),
                   BNO085_ADDR, (unsigned long)I2C_FREQ_HZ);
 }
 
