@@ -19,18 +19,18 @@ GY-BNO085 模块基于 Bosch BNO080/BNO085 RVC，通过 I²C 与主控通信。�
 | **SDA** | I²C 数据 | **GPIO 8** | 需 4.7kΩ 上拉到 3V3 |
 | **SCL** | I²C 时钟 | **GPIO 9** | 需 4.7kΩ 上拉到 3V3 |
 | **INT** | 中断输出 | **GPIO 1** | 下降沿触发（可选，不接也行） |
-| **RST** | 复位 | **3V3** | 直接硬连到 3V3，不接 GPIO |
-| **PS0** | 协议选择 0 | **3V3** | PS0=3V3 → I²C 模式 |
+| **RST** | 复位 | **GPIO 10** | 可选：接 GPIO 可软件复位，或接 3V3 硬连 |
+| **PS0** | 协议选择 0 | **GND** | **PS0=GND → I²C 模式**（PS0=3V3 选择 SPI 模式，会损坏模块！） |
 | **PS1** | 协议选择 1 | **GND** | PS1=GND → I²C 模式 |
 | **ADO** | I²C 地址选择 | **3V3** | ADO=3V3 → 地址 0x4B |
-| **CS** | SPI 片选 | **悬空** | I²C 模式下不用 |
+| **CS** | SPI 片选 | **3V3** | I²C 模式下接 3V3（HIGH） |
 
 ### 1.2 I²C 地址配置
 
 | PS0 | ADO | I²C 地址 |
 |-----|-----|----------|
-| 3V3 | GND | 0x4A（默认） |
-| 3V3 | 3V3 | **0x4B**（本项目使用） |
+| GND | GND | 0x4A（默认） |
+| GND | 3V3 | **0x4B**（本项目使用） |
 
 ### 1.3 接线图（ASCII）
 
@@ -50,14 +50,13 @@ ESP32-S3-DevKitC-1 N16R8          GY-BNO085 模块
 │                │ 4.7kΩ          │                 │
 │                └─── 3V3         │                 │
 │                     │           │                 │
-│  GPIO1  ───────────────────────── INT             │
+│  GPIO10 ───────────────────────── RST             │
+│  GND   ───────────────────────── PS0             │
+│  GND   ───────────────────────── PS1             │
+│  3V3   ───────────────────────── ADO             │
+│  3V3   ───────────────────────── CS              │
 │                     │           │                 │
-│  3V3  ────────────────────────── RST             │
-│  3V3  ────────────────────────── PS0             │
-│  GND  ────────────────────────── PS1             │
-│  3V3  ────────────────────────── ADO             │
-│                     │           │                 │
-│                     │           CS (悬空)         │
+│                     │           INT (悬空)         │
 └─────────────────────┘           └─────────────────┘
 ```
 
@@ -65,10 +64,14 @@ ESP32-S3-DevKitC-1 N16R8          GY-BNO085 模块
 
 1. **电压**：BNO085 工作电压 2.4V~3.6V，必须接 3.3V。接 5V 会永久损坏。
 2. **上拉电阻**：SDA/SCL 各需 4.7kΩ 上拉到 3V3。部分 GY-BNO085 模块自带上拉，此时可省略。
-3. **PS0/PS1**：必须正确配置为 I²C 模式（PS0=3V3, PS1=GND）。接错会进入 SPI/UART 模式。
-4. **RST**：直接接 3V3（硬连），不要接 GPIO。Adafruit 库构造函数传 `-1` 表示无 GPIO 复位。
-5. **GPIO8/9 冲突**：ESP32-S3 的 GPIO8/9 是默认 I²C 引脚，**但 N8 版本（8MB Flash）的 GPIO8/9 被 PSRAM 占用**。本项目使用 N16R8（16MB Flash + 8MB Octal PSRAM），GPIO8/9 可用。详见 [[s3-n8-gpio8-9-i2c-bug]]。
-6. **INT 引脚**：可选。Adafruit 库支持有/无 INT 两种模式。接 GPIO1 可获得更低延迟的数据就绪通知。
+3. **PS0/PS1**：必须正确配置为 I²C 模式（**PS0=GND**, PS1=GND）。**PS0=3V3 选择 SPI 模式，会损坏模块！** PS0/PS1 在上电时锁存，无法在运行时更改。
+4. **RST**：可接 GPIO10 获得软件复位能力，或接 3V3 硬连。RST 引脚有强内部上拉，GPIO10 无法拉低，需用断电重启代替。
+5. **GPIO8/9 冲突**：ESP32-S3 的 GPIO8/9 是默认 I²C 引脚，**但 N8 版本（8MB Flash）的 GPIO8/9 被 PSRAM 占用**。本项目使用 N16R8（16MB Flash + 8MB Quad PSRAM），GPIO8/9 可用。详见 [[s3-n8-gpio8-9-i2c-bug]]。
+6. **INT 引脚**：可选。Adafruit 库支持有/无 INT 两种模式。悬空即可。
+7. **CS 引脚**：I²C 模式下接 3V3（HIGH）。
+8. **ADO 引脚**：接 3V3 选择地址 0x4B，接 GND 选择 0x4A。
+9. **Adafruit BNO08x v1.2.5 API**：使用 `begin_I2C()` 而非 `begin()`，`sh2_SensorValue_t` 使用 `.sensorId` 而非 `.type`。
+10. **断电重启**：BNO085 需要断电重启才能获得干净的初始化状态。断开 VCC 10 秒后重新连接。
 
 ---
 
@@ -255,12 +258,15 @@ Manual checks before code test:
 | PHASE 1 扫描到 0x4A 而非 0x4B | ADO 引脚接错 | ADO 应接 3V3（当前 0x4A = ADO 接 GND） |
 | PHASE 1 扫描到多个地址 | 有其他 I²C 设备 | 断开其他设备，只保留 BNO085 |
 | PHASE 1.5 RAW READ 无数据 | BNO085 未启动 | 检查 VCC 是否 3.3V，RST 是否接 3V3 |
-| PHASE 2 begin_I2C FAILED | 驱动初始化失败 | 检查 PS0=3V3, PS1=GND（I²C 模式） |
+| PHASE 2 begin_I2C FAILED | 驱动初始化失败 | 检查 PS0=GND, PS1=GND（I²C 模式），断电重启 |
 | PHASE 2 enableReport FAILED | 传感器不响应 | 尝试断电重启，检查模块是否损坏 |
 | PHASE 3 事件数为 0 | 传感器未产生数据 | 检查 INT 引脚连接，或设 INT=-1（轮询模式） |
 | PHASE 3 status=0 | 传感器未校准 | 正常现象，移动模块几秒后 status 会变为 3 |
 | 编译错误：找不到库 | 依赖未安装 | 执行 `pio run -e bno085-diag` 会自动下载 |
 | 烧录失败：串口不可用 | USB 口选错 | 使用 USB-UART 口（左侧），非 USB-CDC |
+| RST 引脚 HARD HIGH | RST 有强内部上拉 | 正常现象，使用断电重启代替软件复位 |
+| BNO085 在 "hot" 状态初始化失败 | 之前初始化未干净退出 | 断电重启：断开 VCC 10 秒后重新连接 |
+| PS0=3V3 导致模块损坏 | PS0 选择 SPI 模式 | 更换模块，PS0 必须接 GND |
 
 ### 4.3 传感器状态码
 
@@ -289,3 +295,21 @@ ESP32-S3 **N8**（8MB Flash）版本的 GPIO8/9 被 Octal PSRAM 占用，**不�
 ### 5.3 SensorManager 中 BNO085 被禁用
 
 生产代码 `SensorManager.h` 中 BNO085 初始化被跳过（`_bno_ok = false`），这是有意为之——调试 ADS1115 时临时禁用。验证 BNO085 正常后，需在 `SensorManager::begin()` 中重新启用。
+
+### 5.4 PS0/PS1 配置错误导致模块损坏（2026-06-21）
+
+PS0/PS1 在上电时锁存。PS0=3V3 选择 SPI 模式，会损坏模块。必须 PS0=GND 选择 I²C 模式。
+
+### 5.5 RST 引脚有强内部上拉
+
+RST 引脚有强内部上拉，GPIO10 无法拉低。使用断电重启（断开 VCC 10 秒）代替软件复位。
+
+### 5.6 Adafruit BNO08x v1.2.5 API 变更
+
+- `begin()` → `begin_I2C()`
+- `sensorValue.type` → `sensorValue.sensorId`
+- `enableReport()` 需要间隔参数
+
+### 5.7 BNO085 "hot" 状态初始化失败
+
+BNO085 在之前初始化失败后处于 "hot" 状态，再次初始化会失败。必须断电重启（断开 VCC 10 秒）。

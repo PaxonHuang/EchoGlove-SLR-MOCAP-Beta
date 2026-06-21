@@ -1,6 +1,6 @@
 # PROGRESS.md — Cross-Session State Tracker
 
-**Last updated**: 2026-06-10
+**Last updated**: 2026-06-21
 
 ---
 
@@ -58,13 +58,14 @@
 ### Next Steps
 1. ✅ **P4 flash + verify**: DONE — all subsystems init, watchdog fix applied
 2. ✅ **S3 I2C scan**: DONE — 3/3 devices detected (0x48, 0x49, 0x4B), flat bus confirmed
-3. **S3 hardware sensor read**: connect flex sensors → verify ADC readings via ADS1115
-4. **C6 flash**: use USB-TTL module (3.3V!) to flash C6 firmware
-5. **C6→P4 UART link**: verify end-to-end data flow
-6. **Model export**: run `python glove_firmware/scripts/export_model.py` when trained weights available
-7. **LVGL BSP**: integrate with P4 EV Board 7" MIPI-DSI display
-8. **ES8311 audio**: wire I2S via `esp_codec_dev` BSP component
-9. **Competition demo**: full system integration + demo script
+3. ✅ **BNO085 sensor data test**: DONE — rotation vector, accelerometer, gyroscope streaming
+4. **ADS1115 test**: connect flex sensors → verify ADC readings
+5. **C6 flash**: use USB-TTL module (3.3V!) to flash C6 firmware
+6. **C6→P4 UART link**: verify end-to-end data flow
+7. **Model export**: run `python glove_firmware/scripts/export_model.py` when trained weights available
+8. **LVGL BSP**: integrate with P4 EV Board 7" MIPI-DSI display
+9. **ES8311 audio**: wire I2S via `esp_codec_dev` BSP component
+10. **Competition demo**: full system integration + demo script
 
 ### P4 Verification Details (2026-06-12)
 - **Port**: /dev/ttyACM0 (MAC 30:ED:A0:E2:24:B7, chip rev v1.3)
@@ -75,15 +76,20 @@
   - `main.cpp`: increase uart_task delay 1ms→10ms (watchdog fix when no C6 data)
 - **Expected warnings**: model_data.h not found (stub), lvgl.h not found (log-only mode)
 
-### S3 I2C Verification Details (2026-06-12)
+### S3 I2C Verification Details (2026-06-12, Updated 2026-06-21)
 - **Port**: /dev/ttyACM1 (MAC 30:30:F9:21:D8:DC)
-- **I2C bus**: Flat bus, GPIO8=SDA, GPIO9=SCL, 100kHz
+- **I2C bus**: Flat bus, GPIO8=SDA, GPIO9=SCL, 400kHz
 - **Devices detected**: 3/3
   - 0x48: ADS1115 #1 (flex sensors 0-2)
   - 0x49: ADS1115 #2 (flex sensors 3-4)
   - 0x4B: BNO085 IMU
-- **Key finding**: BNO085 RST pin must be pulled HIGH (3.3V) — floating RST causes I2C non-response
+- **Key findings**:
+  - BNO085 RST pin has strong internal pull-up — GPIO10 cannot pull LOW
+  - Use power cycle (disconnect VCC 10s) to reset BNO085
+  - PS0/PS1 must be GND for I2C mode (PS0=3.3V selects SPI mode)
+  - Adafruit BNO08x v1.2.5 uses `begin_I2C()` not `begin()`
 - **ADS1115 ADDR**: #1 ADDR→GND (0x48), #2 ADDR→VCC (0x49)
+- **Sensor data**: BNO085 confirmed working — rotation vector, accelerometer, gyroscope streaming
 
 ---
 
@@ -514,3 +520,84 @@ Firmware `.proto` established as single source of truth. Relay's `glove_data.pro
 ### Reference
 - Plan: `docs/superpowers/plans/2026-06-18-bno085-diagnostic-firmware.md`
 - SOP docs (verified consistent): `docs/HARDWARE_ASSEMBLY_GUIDE.md`, `docs/HARDWARE_WIRING_DEBUG_GUIDE_DM40B_CN.md`
+
+---
+
+## 2026-06-21 — BNO085 Diagnostic Session (Windows 11 + N16R8 + GY-BNO085)
+
+**Status:** BNO085 fully operational — sensor data streaming confirmed ✅
+**Environment:** Windows 11, ESP32-S3-DevKitC-1 N16R8, PlatformIO
+**Next:** Ubuntu 24.04 compatibility verification
+
+### Wiring (Final — Working)
+
+| BNO085 Pin | ESP32-S3 Pin | Notes |
+|------------|--------------|-------|
+| VCC | 3.3V | **NOT 5V!** |
+| GND | GND | |
+| SDA | GPIO8 | 4.7kΩ pull-up to 3.3V |
+| SCL | GPIO9 | 4.7kΩ pull-up to 3.3V |
+| CS | 3.3V | HIGH for I2C mode |
+| PS0 | GND | **GND=I2C, 3.3V=SPI** |
+| PS1 | GND | Must be GND |
+| ADO | 3.3V | HIGH=0x4B, LOW=0x4A |
+| RST | GPIO10 | Optional: 3.3V if not needed |
+| INT | Floating | Not used |
+
+### Critical Lessons Learned
+
+1. **PS0/PS1 are latched at power-up**: PS0=3.3V selects SPI mode and can damage the module!
+2. **GPIO8/9 works on N16R8**: Unlike N8 variant where GPIO8/9 conflict with internal flash
+3. **Adafruit BNO08x v1.2.5 API**: Uses `begin_I2C()` not `begin()`, `sh2_SensorValue_t` uses `.sensorId` not `.type`
+4. **BNO085 needs power cycle**: Fails if in "hot" state from previous attempts
+5. **RST pin has strong internal pull-up**: GPIO10 cannot pull it LOW — use power cycle instead
+6. **CS must be HIGH**: 3.3V for I2C mode
+7. **ADO selects address**: HIGH=0x4B, LOW=0x4A
+
+### Test Results
+
+**Diagnostic Test:**
+- I2C scan: BNO085 found at 0x4B ✅
+- RST pin: HARD HIGH (expected — strong internal pull-up)
+- Wiring: All correct
+
+**Sensor Data Test:**
+- BNO085 initialization: SUCCESS ✅
+- Rotation vector: Streaming (200Hz) ✅
+- Accelerometer: Streaming (100Hz) ✅
+- Gyroscope: Streaming (100Hz) ✅
+- Data quality: Normal (Z≈9.8 m/s² when stationary)
+
+### Files Created
+
+| File | Purpose |
+|------|---------|
+| `glove_firmware/test/test_bno085/test_bno085_diagnostic.ino` | I2C scan + RST pin check |
+| `glove_firmware/test/test_bno085/test_bno085_sensor_data.ino` | Full sensor data streaming |
+| `glove_firmware/test/test_bno085/README.md` | Test documentation |
+
+### Documentation Updated
+
+- `PROGRESS.md` — This section
+- `PROGRESS_CN.md` — Chinese version
+- `CLAUDE.md` — Hardware context, Adafruit library notes
+- `memory/s3-n8-gpio8-9-i2c-bug.md` — Updated for N16R8
+- `memory/burned-modules-lesson.md` — Added PS0/SPI mode damage
+- `memory/bno085-adafruit-library.md` — New: Adafruit library requirements
+- `docs/BNO085_DIAGNOSTIC_GUIDE.md` — Updated wiring and troubleshooting
+- `docs/HARDWARE_ASSEMBLY_GUIDE.md` — Updated BNO085 section
+- `docs/HARDWARE_WIRING_DEBUG_GUIDE_DM40B_CN.md` — Updated Chinese guide
+
+### Next Steps
+
+1. **Ubuntu 24.04 verification**: Run same tests on Ubuntu to confirm cross-platform compatibility
+2. **ADS1115 test**: Connect flex sensors → verify ADC readings
+3. **Full sensor integration**: BNO085 + ADS1115 + flex sensors together
+4. **Data collection**: Start collecting gesture data for model training
+
+### Windows → Ubuntu Compatibility Notes
+
+- GPIO8/9 pin assignments: Same on both platforms
+- Adafruit BNO08x library: Works on both platforms
+- PlatformIO build: Works on both platforms
+- Serial monitor: `pio device monitor` works on both (COM6 on Windows, /dev/ttyACMx on Ubuntu)

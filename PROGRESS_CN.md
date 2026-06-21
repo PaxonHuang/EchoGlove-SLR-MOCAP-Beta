@@ -1,6 +1,6 @@
 # PROGRESS_CN.md — 跨会话状态追踪器
 
-**最后更新**: 2026-06-10
+**最后更新**: 2026-06-21
 
 ---
 
@@ -65,13 +65,14 @@
 
 1. ✅ **P4 刷写验证**：完成 — 所有子系统初始化，watchdog 修复已应用
 2. ✅ **S3 I2C 扫描**：完成 — 3/3 设备检测到 (0x48, 0x49, 0x4B)，扁平总线确认
-3. **S3 硬件传感器读取**：连接弯曲传感器 → 验证 ADS1115 ADC 读数
-4. **C6 刷写**：使用 USB-TTL 模块（3.3V!）刷写 C6 固件
-5. **C6→P4 UART 链路**：验证端到端数据流
-6. **模型导出**：运行 `python glove_firmware/scripts/export_model.py`（需要训练好的权重）
-7. **LVGL BSP**：集成 P4 EV Board 7 寸 MIPI-DSI 显示屏
-8. **ES8311 音频**：通过 `esp_codec_dev` BSP 组件连接 I2S
-9. **竞赛演示**：全系统集成 + 演示脚本
+3. ✅ **BNO085 传感器数据测试**：完成 — 旋转矢量、加速度计、陀螺仪数据流正常
+4. **ADS1115 测试**：连接弯曲传感器 → 验证 ADC 读数
+5. **C6 刷写**：使用 USB-TTL 模块（3.3V!）刷写 C6 固件
+6. **C6→P4 UART 链路**：验证端到端数据流
+7. **模型导出**：运行 `python glove_firmware/scripts/export_model.py`（需要训练好的权重）
+8. **LVGL BSP**：集成 P4 EV Board 7 寸 MIPI-DSI 显示屏
+9. **ES8311 音频**：通过 `esp_codec_dev` BSP 组件连接 I2S
+10. **竞赛演示**：全系统集成 + 演示脚本
 
 ### P4 验证详情 (2026-06-12)
 - **端口**: /dev/ttyACM0 (MAC 30:ED:A0:E2:24:B7, 芯片版本 v1.3)
@@ -81,6 +82,21 @@
   - `display_task.h`: 添加 `#include "FramePairer.h"` 引入 `FramePair` 类型
   - `main.cpp`: uart_task 延迟从 1ms 增加到 10ms (无 C6 数据时修复 watchdog)
 - **预期警告**: model_data.h 未找到 (stub), lvgl.h 未找到 (仅日志模式)
+
+### S3 I2C 验证详情 (2026-06-12, 更新于 2026-06-21)
+- **端口**: /dev/ttyACM1 (MAC 30:30:F9:21:D8:DC)
+- **I2C 总线**: 扁平总线, GPIO8=SDA, GPIO9=SCL, 400kHz
+- **检测到的设备**: 3/3
+  - 0x48: ADS1115 #1 (弯曲传感器 0-2)
+  - 0x49: ADS1115 #2 (弯曲传感器 3-4)
+  - 0x4B: BNO085 IMU
+- **关键发现**:
+  - BNO085 RST 引脚有强内部上拉 — GPIO10 无法拉低
+  - 使用断电重启 (断开 VCC 10 秒) 重置 BNO085
+  - PS0/PS1 必须为 GND 以选择 I2C 模式 (PS0=3.3V 选择 SPI 模式)
+  - Adafruit BNO08x v1.2.5 使用 `begin_I2C()` 而非 `begin()`
+- **ADS1115 ADDR**: #1 ADDR→GND (0x48), #2 ADDR→VCC (0x49)
+- **传感器数据**: BNO085 确认正常工作 — 旋转矢量、加速度计、陀螺仪数据流
 
 ---
 
@@ -500,3 +516,84 @@ ESP32-S3 通过 USB CDC 连接到 Ubuntu (`/dev/ttyACM0`)。硬件部分接线�
 ### 已安装的依赖
 
 `fastapi`, `websockets`, `pyyaml`, `numpy`, `protobuf`, `grpcio-tools`, `pytest`, `pytest-asyncio`, `torch` (CPU)
+
+---
+
+## 2026-06-21 — BNO085 诊断会话 (Windows 11 + N16R8 + GY-BNO085)
+
+**状态**: BNO085 完全正常 — 传感器数据流确认 ✅
+**环境**: Windows 11, ESP32-S3-DevKitC-1 N16R8, PlatformIO
+**下一步**: Ubuntu 24.04 兼容性验证
+
+### 接线 (最终 — 工作正常)
+
+| BNO085 引脚 | ESP32-S3 引脚 | 备注 |
+|------------|--------------|------|
+| VCC | 3.3V | **不是 5V!** |
+| GND | GND | |
+| SDA | GPIO8 | 4.7kΩ 上拉至 3.3V |
+| SCL | GPIO9 | 4.7kΩ 上拉至 3.3V |
+| CS | 3.3V | HIGH 为 I2C 模式 |
+| PS0 | GND | **GND=I2C, 3.3V=SPI** |
+| PS1 | GND | 必须为 GND |
+| ADO | 3.3V | HIGH=0x4B, LOW=0x4A |
+| RST | GPIO10 | 可选: 3.3V 如果不需要 |
+| INT | 悬空 | 未使用 |
+
+### 关键教训
+
+1. **PS0/PS1 在上电时锁存**: PS0=3.3V 选择 SPI 模式，可能损坏模块!
+2. **GPIO8/9 在 N16R8 上正常工作**: 不同于 N8 变体（GPIO8/9 与内部闪存冲突）
+3. **Adafruit BNO08x v1.2.5 API**: 使用 `begin_I2C()` 而非 `begin()`，`sh2_SensorValue_t` 使用 `.sensorId` 而非 `.type`
+4. **BNO085 需要断电重启**: 如果之前尝试过初始化失败，需要断电重启
+5. **RST 引脚有强内部上拉**: GPIO10 无法将其拉低 — 改用断电重启
+6. **CS 必须为 HIGH**: 3.3V 为 I2C 模式
+7. **ADO 选择地址**: HIGH=0x4B, LOW=0x4A
+
+### 测试结果
+
+**诊断测试:**
+- I2C 扫描: BNO085 在 0x4B 找到 ✅
+- RST 引脚: HARD HIGH (预期 — 强内部上拉)
+- 接线: 全部正确
+
+**传感器数据测试:**
+- BNO085 初始化: 成功 ✅
+- 旋转矢量: 流式传输 (200Hz) ✅
+- 加速度计: 流式传输 (100Hz) ✅
+- 陀螺仪: 流式传输 (100Hz) ✅
+- 数据质量: 正常 (静止时 Z≈9.8 m/s²)
+
+### 创建的文件
+
+| 文件 | 用途 |
+|------|------|
+| `glove_firmware/test/test_bno085/test_bno085_diagnostic.ino` | I2C 扫描 + RST 引脚检查 |
+| `glove_firmware/test/test_bno085/test_bno085_sensor_data.ino` | 完整传感器数据流 |
+| `glove_firmware/test/test_bno085/README.md` | 测试文档 |
+
+### 更新的文档
+
+- `PROGRESS.md` — 英文版本
+- `PROGRESS_CN.md` — 本节
+- `CLAUDE.md` — 硬件上下文、Adafruit 库说明
+- `memory/s3-n8-gpio8-9-i2c-bug.md` — 更新为 N16R8
+- `memory/burned-modules-lesson.md` — 添加 PS0/SPI 模式损坏
+- `memory/bno085-adafruit-library.md` — 新增: Adafruit 库要求
+- `docs/BNO085_DIAGNOSTIC_GUIDE.md` — 更新接线和故障排除
+- `docs/HARDWARE_ASSEMBLY_GUIDE.md` — 更新 BNO085 部分
+- `docs/HARDWARE_WIRING_DEBUG_GUIDE_DM40B_CN.md` — 更新中文指南
+
+### 下一步
+
+1. **Ubuntu 24.04 验证**: 在 Ubuntu 上运行相同测试以确认跨平台兼容性
+2. **ADS1115 测试**: 连接弯曲传感器 → 验证 ADC 读数
+3. **完整传感器集成**: BNO085 + ADS1115 + 弯曲传感器一起
+4. **数据收集**: 开始收集手势数据用于模型训练
+
+### Windows → Ubuntu 兼容性说明
+
+- GPIO8/9 引脚分配: 两个平台相同
+- Adafruit BNO08x 库: 两个平台均可工作
+- PlatformIO 构建: 两个平台均可工作
+- 串口监视器: `pio device monitor` 两个平台均可工作 (Windows 为 COM6, Ubuntu 为 /dev/ttyACMx)

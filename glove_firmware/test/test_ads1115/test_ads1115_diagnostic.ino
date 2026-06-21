@@ -81,7 +81,7 @@ void setup() {
     Wire.beginTransmission(ADS1115_ADDR_GND);
     Wire.write(ADS1115_REG_CFG);
     Wire.endTransmission();
-    Wire.requestFrom((int)ADS1115_ADDR_GND, (int)2);
+    Wire.requestFrom(ADS1115_ADDR_GND, (uint8_t)2);
     if (Wire.available() >= 2) {
         uint16_t cfg = (Wire.read() << 8) | Wire.read();
         Serial.printf("[ADS1115] 0x48 config=0x%04X", cfg);
@@ -95,7 +95,7 @@ void setup() {
     Wire.beginTransmission(ADS1115_ADDR_VDD);
     Wire.write(ADS1115_REG_CFG);
     Wire.endTransmission();
-    Wire.requestFrom((int)ADS1115_ADDR_VDD, (int)2);
+    Wire.requestFrom(ADS1115_ADDR_VDD, (uint8_t)2);
     if (Wire.available() >= 2) {
         uint16_t cfg = (Wire.read() << 8) | Wire.read();
         Serial.printf("[ADS1115] 0x49 config=0x%04X", cfg);

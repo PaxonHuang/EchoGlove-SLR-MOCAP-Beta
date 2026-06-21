@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - V5 Spec: docs/superpowers/specs/2026-06-01-v5-dual-glove-flex-design.md
 - V5.2 Spec: docs/superpowers/specs/2026-06-10-v52-p4-base-station-design.md
 - Architecture: 2x ESP32-S3 gloves + C6 ESP-NOW relay + P4 smart base station (Tier2 + LVGL + TTS)
-- Test Status (2026-06-10): 168/168 pass (64 firmware + 12 receiver + 12 P4 native + 80 relay)
+- Test Status (2026-06-21): 168/168 pass + BNO085 sensor data verified (rotation vector, accelerometer, gyroscope)
 - V5.2 P4 Base Station: 8/8 tasks done (commits f4e4d34..bef0c96), ready for hardware
 
 ### V5 Constants
@@ -240,6 +240,29 @@ Standalone mode (no PC): P4 runs Tier2 + LVGL display + TTS audio independently.
 - **Sensors**: BNO085 IMU (address 0x4B), 5x flex sensors (via 2x ADS1115 ADC)
 - **V5 removed components**: TMAG5273 (Hall sensor), TCA9548A (I2C MUX) — see `docs/archive/v3/` for historical wiring
 
+### BNO085 Wiring (ESP32-S3-DevKitC-1 N16R8)
+
+| BNO085 Pin | ESP32-S3 Pin | Notes |
+|------------|--------------|-------|
+| VCC | 3.3V | **NOT 5V!** |
+| GND | GND | |
+| SDA | GPIO8 | 4.7kΩ pull-up to 3.3V |
+| SCL | GPIO9 | 4.7kΩ pull-up to 3.3V |
+| CS | 3.3V | HIGH for I2C mode |
+| PS0 | GND | **GND=I2C, 3.3V=SPI** |
+| PS1 | GND | Must be GND |
+| ADO | 3.3V | HIGH=0x4B, LOW=0x4A |
+| RST | GPIO10 | Optional: 3.3V if not needed |
+| INT | Floating | Not used |
+
+**Critical Notes:**
+- PS0/PS1 are latched at power-up. PS0=3.3V selects SPI mode and can damage the module!
+- GPIO8/9 works on N16R8 (unlike N8 variant where GPIO8/9 conflict with internal flash)
+- Adafruit BNO08x v1.2.5 uses `begin_I2C()` not `begin()`
+- `sh2_SensorValue_t` uses `.sensorId` not `.type`
+- BNO085 needs power cycle for clean initialization (fails if in "hot" state)
+- RST pin has strong internal pull-up — GPIO10 cannot pull LOW, use power cycle instead
+
 ---
 
 ## Performance Targets
@@ -369,6 +392,10 @@ Context7 and Espressif Docs failures are proxy-related (`127.0.0.1:15721`), not 
 - **File line endings**: Managed by `.gitattributes` — LF for all source, CRLF only for Windows scripts
 - **P4 UART**: C6→P4 uses 2Mbps UART with CRC-16/MODBUS. Frame: `[0xAA 0x55 69-byte payload CRC16_L CRC16_H]` = 73 bytes
 - **P4 vs S3 builds**: P4/C6 use ESP-IDF (`idf.py`), S3 gloves use PlatformIO (`pio`) — different build systems
+- **BNO085 PS0/PS1**: PS0/PS1 are latched at power-up. PS0=3.3V selects SPI mode and can damage the module! Always connect PS0=GND for I2C mode.
+- **BNO085 RST**: RST pin has strong internal pull-up. GPIO10 cannot pull LOW. Use power cycle (disconnect VCC 10s) to reset.
+- **BNO085 init**: Adafruit library fails if BNO085 is in "hot" state. Always power cycle before initializing.
+- **BNO085 GPIO8/9**: Works on N16R8 (unlike N8 variant where GPIO8/9 conflict with internal flash)
 
 ## Testing
 
