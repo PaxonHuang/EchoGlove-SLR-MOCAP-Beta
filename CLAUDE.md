@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - V5 Spec: docs/superpowers/specs/2026-06-01-v5-dual-glove-flex-design.md
 - V5.2 Spec: docs/superpowers/specs/2026-06-10-v52-p4-base-station-design.md
 - Architecture: 2x ESP32-S3 gloves + C6 ESP-NOW relay + P4 smart base station (Tier2 + LVGL + TTS)
-- Test Status (2026-06-21): 168/168 pass + BNO085 sensor data verified (rotation vector, accelerometer, gyroscope)
+- Test Status (2026-06-22): 168/168 pass + BNO085 sensor data verified + ADS1115 I2C detection verified (0x48, 0x49)
 - V5.2 P4 Base Station: 8/8 tasks done (commits f4e4d34..bef0c96), ready for hardware
 
 ### V5 Constants

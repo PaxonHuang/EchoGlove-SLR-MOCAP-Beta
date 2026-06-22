@@ -1,6 +1,6 @@
 # PROGRESS.md — Cross-Session State Tracker
 
-**Last updated**: 2026-06-21
+**Last updated**: 2026-06-22
 
 ---
 
@@ -22,6 +22,8 @@
 | 1b | C6 co-processor build + flash | ⏳ Blocked (needs USB-TTL adapter) | Build OK, needs 3.3V USB-TTL module |
 | 1c | P4 firmware build + flash, verify UART | ✅ Done | `ttyACM0`, all subsystems OK, watchdog fix applied |
 | 2 | S3 I2C scan (3 devices) | ✅ Done | 0x48+0x49+0x4B all detected, flat bus confirmed |
+| 3 | BNO085 sensor data test | ✅ Done | Rotation vector, accelerometer, gyroscope streaming |
+| 4 | ADS1115 I2C detection | ✅ Done | Both 0x48 and 0x49 detected, config registers OK |
 **Branch**: V5-DualGloveFlex
 **Design Spec**: `docs/superpowers/specs/2026-06-10-v52-p4-base-station-design.md`
 **Implementation Plan**: `docs/superpowers/plans/2026-06-10-v52-p4-base-station.md`
@@ -59,13 +61,16 @@
 1. ✅ **P4 flash + verify**: DONE — all subsystems init, watchdog fix applied
 2. ✅ **S3 I2C scan**: DONE — 3/3 devices detected (0x48, 0x49, 0x4B), flat bus confirmed
 3. ✅ **BNO085 sensor data test**: DONE — rotation vector, accelerometer, gyroscope streaming
-4. **ADS1115 test**: connect flex sensors → verify ADC readings
-5. **C6 flash**: use USB-TTL module (3.3V!) to flash C6 firmware
-6. **C6→P4 UART link**: verify end-to-end data flow
-7. **Model export**: run `python glove_firmware/scripts/export_model.py` when trained weights available
-8. **LVGL BSP**: integrate with P4 EV Board 7" MIPI-DSI display
-9. **ES8311 audio**: wire I2S via `esp_codec_dev` BSP component
-10. **Competition demo**: full system integration + demo script
+4. ✅ **ADS1115 I2C detection**: DONE — both 0x48 and 0x49 detected, config registers OK
+5. **ADS1115 raw ADC read**: verify analog input readings with known voltage
+6. **Flex sensor integration**: connect flex sensors → verify ADC readings → calibration
+7. **Full sensor integration**: BNO085 + ADS1115 + flex sensors together
+8. **C6 flash**: use USB-TTL module (3.3V!) to flash C6 firmware
+9. **C6→P4 UART link**: verify end-to-end data flow
+10. **Model export**: run `python glove_firmware/scripts/export_model.py` when trained weights available
+11. **LVGL BSP**: integrate with P4 EV Board 7" MIPI-DSI display
+12. **ES8311 audio**: wire I2S via `esp_codec_dev` BSP component
+13. **Competition demo**: full system integration + demo script
 
 ### P4 Verification Details (2026-06-12)
 - **Port**: /dev/ttyACM0 (MAC 30:ED:A0:E2:24:B7, chip rev v1.3)
@@ -76,7 +81,7 @@
   - `main.cpp`: increase uart_task delay 1ms→10ms (watchdog fix when no C6 data)
 - **Expected warnings**: model_data.h not found (stub), lvgl.h not found (log-only mode)
 
-### S3 I2C Verification Details (2026-06-12, Updated 2026-06-21)
+### S3 I2C Verification Details (2026-06-12, Updated 2026-06-22)
 - **Port**: /dev/ttyACM1 (MAC 30:30:F9:21:D8:DC)
 - **I2C bus**: Flat bus, GPIO8=SDA, GPIO9=SCL, 400kHz
 - **Devices detected**: 3/3
@@ -90,6 +95,17 @@
   - Adafruit BNO08x v1.2.5 uses `begin_I2C()` not `begin()`
 - **ADS1115 ADDR**: #1 ADDR→GND (0x48), #2 ADDR→VCC (0x49)
 - **Sensor data**: BNO085 confirmed working — rotation vector, accelerometer, gyroscope streaming
+
+### ADS1115 I2C Detection Details (2026-06-22)
+- **Diagnostic firmware**: `glove_firmware/test/test_ads1115/test_ads1115_diagnostic.ino`
+- **PlatformIO environment**: `[env:ads1115-diag]`
+- **I2C scan results**:
+  - 0x48: ADS1115 #1 (ADDR→GND) — config register 0x8583 (OK)
+  - 0x49: ADS1115 #2 (ADDR→VDD) — config register 0x8583 (OK)
+  - 0x4B: BNO085 IMU — detected
+- **Total devices**: 3/3 — ALL DETECTED
+- **Status**: PASS — I2C bus fully operational, all sensors ready
+- **Next**: Phase 2 — raw ADC read test (verify analog input with known voltage)
 
 ---
 
