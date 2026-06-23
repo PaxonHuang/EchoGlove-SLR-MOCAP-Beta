@@ -1,6 +1,44 @@
 # PROGRESS.md — Cross-Session State Tracker
 
-**Last updated**: 2026-06-22
+**Last updated**: 2026-06-23
+
+---
+
+## V6.0 LSM6DSV16X Migration
+
+**Status**: Design documents written ✅ — pending user review
+**Branch**: V6-LSM6DSV16X (to be created from V5-DualGloveFlex)
+**Design Spec**: `docs/V6/04_SOP-SPEC-PLAN_V6.md`
+**Date**: 2026-06-23
+
+### Key Decision
+Replace BNO085 ($15-25) with ST-LSM6DSV16X ($2-4) for cost savings + embedded SFLP fusion.
+
+### Design Documents (6-file package)
+| File | Status | Content |
+|------|--------|---------|
+| `docs/V6/01_architecture_diagrams.md` | ✅ Written | System architecture, data flow, I2C topology, FreeRTOS tasks |
+| `docs/V6/02_BOM_table.md` | ✅ Written | Per-glove BOM, base station BOM, cost comparison |
+| `docs/V6/03_wiring_diagram.md` | ✅ Written | LSM6DSV16X pinout, I2C bus, flex sensor circuit, UART wiring |
+| `docs/V6/04_SOP-SPEC-PLAN_V6.md` | ✅ Written | Main 12-section design spec (supersedes V5.0+V5.2) |
+| `docs/V6/05_claude_code_prompts.md` | ✅ Written | Implementation prompts for each migration phase |
+| `docs/V6/06_decision_summary.md` | ✅ Written | Decision log, cost analysis, risk assessment |
+
+### Migration Summary
+- **IMU**: BNO085@0x4B → LSM6DSV16X@0x6A (SDO=GND)
+- **SensorData interface**: UNCHANGED (11-dim: flex[5]+euler[3]+gyro[3])
+- **ESP-NOW packet**: UNCHANGED (69 bytes)
+- **Feature vector**: UNCHANGED (11 single, 28 dual)
+- **New code**: ~400 lines (LSM6DSV16XManager ~200, MadgwickFilter ~150)
+- **Changed code**: ~30 lines in SensorManager.cpp
+- **Cost savings**: $26-42 per pair of gloves
+
+### Next Steps
+1. User reviews V6 design documents
+2. Create V6-LSM6DSV16X branch
+3. Phase 1: LSM6DSV16X driver implementation
+4. Phase 2: SensorManager migration
+5. Phase 3: End-to-end validation
 
 ---
 
