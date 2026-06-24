@@ -41,6 +41,7 @@ public:
 
 #ifndef UNIT_TEST
         Wire.begin(I2CPins::SDA, I2CPins::SCL, I2CPins::FREQ);
+        Wire.setTimeOut(50);  // 50ms timeout per transaction (prevents hangs)
         Serial.printf("[ADS1115] I2C bus init: SDA=%d SCL=%d %dkHz\n",
                       I2CPins::SDA, I2CPins::SCL, I2CPins::FREQ / 1000);
 #endif

@@ -1,125 +1,136 @@
 /* =============================================================================
- * GY-ADS1115 Diagnostic Firmware — ESP32-S3-DevKitC-1 N16R8
+ * EchoGlove V5 — Deep Hardware Diagnostic
  * =============================================================================
- * Purpose: Verify ADS1115 ADC modules are detected on I2C bus
- *
- * Wiring (ADS1115 Module 1 — Address 0x48):
- *   VCC → 3.3V (NOT 5V!)
- *   GND → GND
- *   SDA → GPIO8 (shared with BNO085)
- *   SCL → GPIO9 (shared with BNO085)
- *   ADDR → GND (selects address 0x48)
- *
- * Wiring (ADS1115 Module 2 — Address 0x49):
- *   VCC → 3.3V (NOT 5V!)
- *   GND → GND
- *   SDA → GPIO8 (shared with BNO085)
- *   SCL → GPIO9 (shared with BNO085)
- *   ADDR → 3.3V (selects address 0x49)
- *
- * Expected output:
- *   [I2C] Scanning 0x01..0x7F...
- *   [I2C] Found device at 0x4B (BNO085)
- *   [I2C] Found device at 0x48 (ADS1115 GND)
- *   [I2C] Found device at 0x49 (ADS1115 VDD)
- *   [ADS1115] 0x48 config=0x8583 (OK)
- *   [ADS1115] 0x49 config=0x8583 (OK)
- *
- * Build: pio run -e ads1115-diag -t upload
- * Monitor: pio device monitor -e ads1115-diag
- * =============================================================================
- */
-
+ * Tests: I2C bus, BNO085 (0x4B), ADS1115 (0x48, 0x49)
+ * Requires: ESP32-S3 + BNO085 + pull-up resistors on SDA/SCL
+ * ============================================================================= */
 #include <Arduino.h>
 #include <Wire.h>
 
-// I2C pins (same as BNO085)
+// I2C pins
 #define SDA_PIN 8
 #define SCL_PIN 9
+#define I2C_FREQ 100000
 
-// ADS1115 addresses
-#define ADS1115_ADDR_GND  0x48
-#define ADS1115_ADDR_VDD  0x49
+// Expected addresses
+#define ADDR_ADS1_1  0x48
+#define ADDR_ADS1_2  0x49
+#define ADDR_BNO085  0x4B
 
-// ADS1115 registers
-#define ADS1115_REG_CONV  0x00
-#define ADS1115_REG_CFG   0x01
+void scanI2CBus() {
+    Serial.println("\n--- I2C Bus Scan (0x03..0x77) ---");
+    int found = 0;
+    for (uint8_t addr = 0x03; addr < 0x78; addr++) {
+        Wire.beginTransmission(addr);
+        uint8_t err = Wire.endTransmission();
+        if (err == 0) {
+            Serial.printf("  [OK] 0x%02X", addr);
+            if (addr == ADDR_ADS1_1) Serial.print(" (ADS1115 #1)");
+            else if (addr == ADDR_ADS1_2) Serial.print(" (ADS1115 #2)");
+            else if (addr == ADDR_BNO085) Serial.print(" (BNO085)");
+            Serial.println();
+            found++;
+        }
+    }
+    Serial.printf("Scan complete: %d device(s) found\n", found);
+}
+
+void probeBNO085() {
+    Serial.println("\n--- BNO085 Probe (0x4B) ---");
+
+    // Try basic I2C communication
+    Wire.beginTransmission(ADDR_BNO085);
+    uint8_t err = Wire.endTransmission();
+    if (err == 0) {
+        Serial.println("  BNO085 responded on I2C! Device present.");
+    } else {
+        Serial.printf("  BNO085 NOT responding. err=%d\n", err);
+        Serial.println("  Possible causes:");
+        Serial.println("    1. PS0 pin not connected to GND (must be LOW for I2C)");
+        Serial.println("    2. ADO pin not connected to 3.3V (must be HIGH for 0x4B)");
+        Serial.println("    3. RST pin floating or connected wrong");
+        Serial.println("    4. Missing pull-up resistors on SDA/SCL");
+        Serial.println("    5. Wiring error (SDA/SCL swapped, loose connection)");
+    }
+}
+
+void probeADS1115(uint8_t addr, const char* name) {
+    Serial.printf("\n--- %s Probe (0x%02X) ---\n", name, addr);
+    Wire.beginTransmission(addr);
+    uint8_t err = Wire.endTransmission();
+    if (err == 0) {
+        Serial.printf("  %s responded! Device present.\n", name);
+    } else {
+        Serial.printf("  %s NOT responding. err=%d (expected if not connected)\n", name, err);
+    }
+}
+
+void testGPIO() {
+    Serial.println("\n--- GPIO State Check ---");
+    // Check SDA/SCL state without I2C
+    pinMode(SDA_PIN, INPUT);
+    pinMode(SCL_PIN, INPUT);
+    Serial.printf("  GPIO%d (SDA) raw: %d\n", SDA_PIN, digitalRead(SDA_PIN));
+    Serial.printf("  GPIO%d (SCL) raw: %d\n", SCL_PIN, digitalRead(SCL_PIN));
+
+    // With internal pull-up
+    pinMode(SDA_PIN, INPUT_PULLUP);
+    pinMode(SCL_PIN, INPUT_PULLUP);
+    delay(10);
+    Serial.printf("  GPIO%d (SDA) pull-up: %d\n", SDA_PIN, digitalRead(SDA_PIN));
+    Serial.printf("  GPIO%d (SCL) pull-up: %d\n", SCL_PIN, digitalRead(SCL_PIN));
+
+    // Should be HIGH when pull-ups present
+    if (digitalRead(SDA_PIN) == HIGH && digitalRead(SCL_PIN) == HIGH) {
+        Serial.println("  PASS: Both lines HIGH (pull-ups working)");
+    } else {
+        Serial.println("  WARN: Lines not both HIGH — check pull-ups or wiring");
+    }
+}
 
 void setup() {
     Serial.begin(115200);
-    while (!Serial) delay(10);
-    delay(2000);
+    delay(3000);  // Wait for USB CDC to be ready
 
     Serial.println("\n\n========================================");
-    Serial.println("ADS1115 Diagnostic — ESP32-S3 N16R8");
+    Serial.println("  EchoGlove V5 — Deep Hardware Diagnostic");
     Serial.println("========================================\n");
 
-    // Step 1: I2C scan
-    Serial.println("[I2C] Scanning 0x01..0x7F...");
-    Wire.begin(SDA_PIN, SCL_PIN);
-    Wire.setClock(100000);  // 100kHz for stability
-
-    int deviceCount = 0;
-    for (byte addr = 1; addr < 127; addr++) {
-        Wire.beginTransmission(addr);
-        byte err = Wire.endTransmission();
-        if (err == 0) {
-            Serial.printf("[I2C] Found device at 0x%02X", addr);
-            if (addr == 0x4B) Serial.print(" (BNO085)");
-            else if (addr == 0x48) Serial.print(" (ADS1115 GND)");
-            else if (addr == 0x49) Serial.print(" (ADS1115 VDD)");
-            Serial.println();
-            deviceCount++;
-        }
-    }
-    Serial.printf("[I2C] Total devices found: %d\n\n", deviceCount);
-
-    // Step 2: Read ADS1115 config registers
-    Serial.println("[ADS1115] Reading config registers...");
-
-    // Check ADS1115@0x48
-    Wire.beginTransmission(ADS1115_ADDR_GND);
-    Wire.write(ADS1115_REG_CFG);
-    Wire.endTransmission();
-    Wire.requestFrom((int)ADS1115_ADDR_GND, (int)2);
-    if (Wire.available() >= 2) {
-        uint16_t cfg = (Wire.read() << 8) | Wire.read();
-        Serial.printf("[ADS1115] 0x48 config=0x%04X", cfg);
-        if (cfg == 0x8583) Serial.println(" (OK — default config)");
-        else Serial.printf(" (unexpected: 0x%04X)\n", cfg);
+    Serial.printf("ESP32-S3 Chip: %s rev %d\n", ESP.getChipModel(), ESP.getChipRevision());
+    Serial.printf("CPU Freq: %d MHz\n", ESP.getCpuFreqMHz());
+    Serial.printf("Flash: %d MB\n", ESP.getFlashChipSize() / (1024 * 1024));
+    if (psramFound()) {
+        Serial.printf("PSRAM: %d KB\n", ESP.getPsramSize() / 1024);
     } else {
-        Serial.println("[ADS1115] 0x48 config read FAIL (no response)");
+        Serial.println("PSRAM: Not found");
     }
 
-    // Check ADS1115@0x49
-    Wire.beginTransmission(ADS1115_ADDR_VDD);
-    Wire.write(ADS1115_REG_CFG);
-    Wire.endTransmission();
-    Wire.requestFrom((int)ADS1115_ADDR_VDD, (int)2);
-    if (Wire.available() >= 2) {
-        uint16_t cfg = (Wire.read() << 8) | Wire.read();
-        Serial.printf("[ADS1115] 0x49 config=0x%04X", cfg);
-        if (cfg == 0x8583) Serial.println(" (OK — default config)");
-        else Serial.printf(" (unexpected: 0x%04X)\n", cfg);
-    } else {
-        Serial.println("[ADS1115] 0x49 config read FAIL (no response)");
-    }
+    // Step 1: GPIO check
+    testGPIO();
 
-    // Step 3: Summary
+    // Step 2: Init I2C
+    Serial.println("\n--- I2C Bus Init ---");
+    Serial.printf("  SDA=GPIO%d, SCL=GPIO%d, Freq=%dkHz\n", SDA_PIN, SCL_PIN, I2C_FREQ / 1000);
+    Wire.begin(SDA_PIN, SCL_PIN, I2C_FREQ);
+    Wire.setTimeOut(100);  // 100ms timeout
+    Serial.println("  I2C bus initialized.");
+
+    // Step 3: Scan
+    scanI2CBus();
+
+    // Step 4: Probe specific devices
+    probeBNO085();
+    probeADS1115(ADDR_ADS1_1, "ADS1115 #1");
+    probeADS1115(ADDR_ADS1_2, "ADS1115 #2");
+
     Serial.println("\n========================================");
-    Serial.println("Diagnostic Complete");
+    Serial.println("  Diagnostic Complete");
     Serial.println("========================================");
-    Serial.println("Expected: 3 devices (0x48, 0x49, 0x4B)");
-    Serial.printf("Found: %d devices\n", deviceCount);
-    if (deviceCount >= 3) {
-        Serial.println("Status: PASS — All I2C devices detected");
-    } else {
-        Serial.println("Status: FAIL — Missing devices, check wiring");
-    }
-    Serial.println("========================================\n");
+    Serial.println("\nContinuing to loop (tick every 2s)...");
 }
 
 void loop() {
-    // Diagnostic runs once, then idle
-    delay(10000);
+    static uint32_t tick = 0;
+    Serial.printf("tick %lu\n", ++tick);
+    delay(2000);
 }

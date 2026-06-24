@@ -77,25 +77,33 @@ public:
         if (!_simulation_mode) {
             // ── Initialize I2C bus first ──
             Wire.begin(I2CPins::SDA, I2CPins::SCL, I2CPins::FREQ);
+            Wire.setTimeOut(50);  // 50ms timeout per transaction (prevents hangs)
             Serial.printf("[SensorManager] I2C bus init: SDA=%d SCL=%d %dkHz\n",
                           I2CPins::SDA, I2CPins::SCL, I2CPins::FREQ / 1000);
 
-            // ── I2C Bus Scan (verify devices before init) ──
-            Serial.println("[SensorManager] Scanning I2C bus...");
+            // ── Probe expected I2C addresses (skip full scan to avoid hangs) ──
+            Serial.println("[SensorManager] Probing I2C devices...");
             int found = 0;
-            for (uint8_t addr = 1; addr < 127; addr++) {
-                Wire.beginTransmission(addr);
+            uint8_t targets[] = {0x48, 0x49, 0x4B};
+            const char* names[] = {"ADS1115 #1", "ADS1115 #2", "BNO085"};
+            for (int i = 0; i < 3; i++) {
+                uint32_t t0 = millis();
+                Wire.beginTransmission(targets[i]);
                 uint8_t err = Wire.endTransmission();
+                uint32_t dt = millis() - t0;
                 if (err == 0) {
-                    Serial.printf("  ✓ Found device at 0x%02X", addr);
-                    if (addr == 0x48) Serial.print("  (ADS1115 #1)");
-                    else if (addr == 0x49) Serial.print("  (ADS1115 #2)");
-                    else if (addr == 0x4B) Serial.print("  (BNO085)");
-                    Serial.println();
+                    Serial.printf("  [OK] 0x%02X (%s) %dms\n", targets[i], names[i], dt);
                     found++;
+                } else {
+                    Serial.printf("  [--] 0x%02X (%s) err=%d %dms\n", targets[i], names[i], err, dt);
                 }
             }
-            Serial.printf("[SensorManager] I2C scan: %d device(s) found\n", found);
+            Serial.printf("[SensorManager] I2C probe: %d/3 device(s) found\n", found);
+
+            if (found == 0) {
+                Serial.println("[SensorManager] WARNING: No I2C devices found!");
+                Serial.println("[SensorManager] Check wiring: GPIO8=SDA, GPIO9=SCL, 4.7k pull-ups to 3.3V");
+            }
 
             // ── Initialize ADS1115 (flex sensors) ──
             // Note: ADS1115Manager.begin() will call Wire.begin() again, but that's OK
