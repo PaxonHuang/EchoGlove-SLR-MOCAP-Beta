@@ -35,7 +35,7 @@
 |  |  ESP32-S3 N16R8 | --~2ms---------> | ESP32-C6  |--2M-->| ESP32-P4  |  |
 |  |                 |                   |  MINI-1   | bps   | 400MHz    |  |
 |  |  LSM6DSV16X     |                   +-----------+       | RV32      |  |
-|  |  2x ADS1115     |                                       | Dual-Core |  |
+|  |  ADC1 (GPIO1-5) |                                       | Dual-Core |  |
 |  |  5x Flex        |                                       +-----+-----+  |
 |  |  Tier1 CNN      |                                             |         |
 |  |  11-dim feat    |                                         USB | HS      |
@@ -46,7 +46,7 @@
 |  |  ESP32-S3 N16R8 |                                   |   PC Relay      | |
 |  |                 |                                   |   FastAPI        | |
 |  |  LSM6DSV16X     |                                   |   Tier3 ST-GCN  | |
-|  |  2x ADS1115     |                                   |   NLP + TTS     | |
+|  |  ADC1 (GPIO1-5) |                                   |   NLP + TTS     | |
 |  |  5x Flex        |                                   +--------+--------+ |
 |  |  Tier1 CNN      |                                            |          |
 |  |  11-dim feat    |                                      WS:8765| JSON     |
@@ -92,17 +92,21 @@
 ```
 +========================= Glove (per hand) =========================+
 |                                                                    |
-|  LSM6DSV16X (0x6A)      ADS1115 #1 (0x48)   ADS1115 #2 (0x49)   |
-|  +---------------+       +-------------+     +-------------+      |
-|  | Accel + Gyro  |       | Ch0: Thumb  |     | Ch3: Ring   |      |
-|  | SFLP Quat     |       | Ch1: Index  |     | Ch4: Pinky  |      |
-|  +-------+-------+       | Ch2: Middle |     +------+------+      |
-|          |               +------+------+            |              |
-|          v                      |                   |              |
-|  QuaternionToEuler()            v                   v              |
-|          |               FlexManager (5-point piecewise cal)       |
-|          v                      |                                  |
-|  euler[3] + gyro[3]       flex[5] normalized [0,1]                |
+|  LSM6DSV16X (0x6A)          ADC1 (GPIO1-5)                       |
+|  +---------------+         +-------------+                        |
+|  | Accel + Gyro  |         | Ch0: Thumb  |                        |
+|  | SFLP Quat     |         | Ch1: Index  |                        |
+|  +-------+-------+         | Ch2: Middle |                        |
+|          |                 | Ch3: Ring   |                        |
+|          v                 | Ch4: Pinky  |                        |
+|  QuaternionToEuler()       +------+------+                         |
+|          |                        |                                |
+|          v                        v                                |
+|  euler[3] + gyro[3]       FlexManager (5-point piecewise cal)     |
+|          |                        |                                |
+|          v                        v                                |
+|                            flex[5] normalized [0,1]                |
+|                       (analogReadMilliVolts, N=16 oversample)      |
 |          |                      |                                  |
 |          +----------+-----------+                                  |
 |                     v                                              |
@@ -197,6 +201,8 @@
 +===================================================================+
 ```
 
+> V6: ADS1115×2 removed — flex on internal ADC1 (GPIO1-5), not on I²C. I²C bus now carries only LSM6DSV16X @ 0x6A. See `07_internal_adc_migration.md`.
+
 ### 2.1 Latency Budget
 
 | Stage | Latency | Notes |
@@ -233,50 +239,52 @@ I2C 总线拓扑 -- 每只手套的传感器连接。
                                         | |
                +------------------------+-+------------------------+
                |                  I2C Flat Bus                      |
-               |                  (no MUX)                          |
+               |       (single device — no MUX, V6 removed ADS1115) |
                |                                                    |
-     +---------+---------+    +---------+---------+    +-----------+--+
-     |                   |    |                   |    |              |
-     v                   v    v                   v    v              |
-+----------+      +----------+          +----------+                 |
-|LSM6DSV16X|      |ADS1115 #1|          |ADS1115 #2|                 |
-|  @ 0x6A  |      |  @ 0x48  |          |  @ 0x49  |                 |
-|          |      |          |          |          |                 |
-| SDO=GND  |      | ADDR=GND |          | ADDR=VDD |                 |
-| CS=3.3V  |      |          |          |          |                 |
-| (I2C)    |      |          |          |          |                 |
-+----------+      +----------+          +----------+                 |
-|               |          |          |          |                 |
-| Accel + Gyro  | Ch0=Flex0| Ch1=Flex1| Ch2=Flex2|                 |
-| SFLP Quat     | (Thumb)  | (Index)  | (Middle) |                 |
-|               |          |          |          |                 |
-| Outputs:      | Ch3=Flex3| Ch4=Flex4|          |                 |
-| - quaternion  | (Ring)   | (Pinky)  |          |                 |
-| - accel (g)   +----------+----------+----------+                 |
-| - gyro (dps)                                                      |
-| - temperature                                                     |
-+-----------------------------------------------------------------+
+     +---------+---------+                                          |
+     |                   |                                          |
+     v                   v                                          |
++----------+                                                       |
+|LSM6DSV16X|                                                       |
+|  @ 0x6A  |                                                       |
+|          |                                                       |
+| SDO=GND  |                                                       |
+| CS=3.3V  |                                                       |
+| (I2C)    |                                                       |
++----------+                                                       |
+|                                                                  |
+| Accel + Gyro                                                     |
+| SFLP Quat                                                        |
+|                                                                  |
+| Outputs:                                                         |
+| - quaternion                                                     |
+| - accel (g)                                                      |
+| - gyro (dps)                                                     |
+| - temperature                                                    |
++------------------------------------------------------------------+
 ```
+
+> V6: ADS1115×2 removed — flex on internal ADC1 (see `07_internal_adc_migration.md`). I²C bus now has ONE device: LSM6DSV16X @ 0x6A.
 
 ### 3.1 I2C Address Map
 
 | Device | Address | SDO/ADDR Pin | Config |
 |--------|---------|-------------|--------|
 | LSM6DSV16X | 0x6A | SDO/SA0 = GND | CS = 3.3V (I2C mode) |
-| ADS1115 #1 | 0x48 | ADDR = GND | Ch0-2: Thumb, Index, Middle |
-| ADS1115 #2 | 0x49 | ADDR = VDD | Ch3-4: Ring, Pinky |
+
+> V6: ADS1115 @ 0x48 / 0x49 removed — flex on internal ADC1 (see `07`). (V5, removed: BNO085 @ 0x4B.)
 
 ### 3.2 Flex Sensor Wiring (per channel)
 
 ```
-3.3V ---[ Flex Sensor ]---+--- ADC Input (ADS1115)
+3.3V ---[ Flex Sensor ]---+--- ADC1 GPIO1-5 (internal)
                            |
                        [ 47kΩ ]
                            |
                           GND
 
 Voltage divider: V_out = 3.3V * R_flex / (R_flex + 47kΩ)
-ADS1115 PGA: +/-4.096V range, 16-bit signed
+ADC_ATTEN_DB_12: ~0–2500 mV usable, 12-bit; see `07_internal_adc_migration.md`
 Normalized: flex_norm = (raw - cal_min) / (cal_max - cal_min)
 ```
 
@@ -299,9 +307,8 @@ Normalized: flex_norm = (raw - cal_min) / (cal_max - cal_min)
 | Device | Bytes | Time | Notes |
 |--------|-------|------|-------|
 | LSM6DSV16X | 14 (quat+gyro+accel) | ~0.35ms | SFLP output + raw gyro |
-| ADS1115 #1 | 6 (3 channels x 2B) | ~0.15ms | Single-shot, 860 SPS |
-| ADS1115 #2 | 4 (2 channels x 2B) | ~0.10ms | Single-shot, 860 SPS |
-| **Total per sample** | | **~0.6ms** | Well within 10ms budget |
+| ADC1 (5ch flex) | 5 (N=16 oversample) | ~0.8ms | internal ADC, see `07` |
+| **Total per sample** | | **~1.15ms** | Well within 10ms budget |
 
 ---
 
@@ -319,9 +326,9 @@ FreeRTOS 任务架构 -- 手套端 + P4 基站端。
 |  | Task_SensorRead  [Priority: 3 (highest),  Freq: 100Hz]      | |
 |  |                                                                | |
 |  |   I2C Read LSM6DSV16X  ----+                                  | |
-|  |   I2C Read ADS1115 #1   ---+---> SensorData (11-dim)          | |
-|  |   I2C Read ADS1115 #2   ---+         |                        | |
-|  |   ~0.6ms total                      v                        | |
+|  |   ADC1 read 5ch (GPIO1-5) ---+--> SensorData (11-dim)          | |
+|  |   (internal ADC, see 07)    |          |                        | |
+|  |   ~1.15ms total                      v                        | |
 |  |                              Kalman Filter (11-ch, 1D)        | |
 |  |                                      |                        | |
 |  |                              SlidingWindow.push()             | |
@@ -815,17 +822,17 @@ Total:   73 bytes
 ```
 +==================== Left Glove (ESP32-S3) ====================+
 |                                                                |
-|  LSM6DSV16X          ADS1115 #1         ADS1115 #2           |
-|  +----------+        +----------+       +----------+          |
-|  | SFLP Quat|        | Flex 0-2 |       | Flex 3-4 |          |
-|  | Gyro     |        | (3 ch)   |       | (2 ch)   |          |
-|  +----+-----+        +----+-----+       +----+-----+          |
-|       |                   |                  |                 |
-|       v                   v                  v                 |
-|  quat -> euler[3]    flex_norm[5]                              |
-|  gyro_raw[3]                                               |
-|       |                   |                                    |
-|       +-------+-----------+                                    |
+|  LSM6DSV16X              ADC1 (GPIO1-5)                      |
+|  +----------+            +----------+                          |
+|  | SFLP Quat|            | Flex 0-4 |                          |
+|  | Gyro     |            | (5 ch)   |                          |
+|  +----+-----+            +----+-----+                          |
+|       |                       |                                |
+|       v                       v                                |
+|  quat -> euler[3]        flex_norm[5]                          |
+|  gyro_raw[3]                                                 |
+|       |                       |                                |
+|       +-------+---------------+                                |
 |               v                                                |
 |     Left_SensorData (11-dim)                                   |
 |     = [flex0..flex4, euler_x..z, gyro_x..z]                   |
@@ -843,17 +850,17 @@ Total:   73 bytes
                 |
 +===============v================================================+ +=================== Right Glove (ESP32-S3) ===================+
 |                                                                |
-|  LSM6DSV16X          ADS1115 #1         ADS1115 #2           |
-|  +----------+        +----------+       +----------+          |
-|  | SFLP Quat|        | Flex 0-2 |       | Flex 3-4 |          |
-|  | Gyro     |        | (3 ch)   |       | (2 ch)   |          |
-|  +----+-----+        +----+-----+       +----+-----+          |
-|       |                   |                  |                 |
-|       v                   v                  v                 |
-|  quat -> euler[3]    flex_norm[5]                              |
-|  gyro_raw[3]                                               |
-|       |                   |                                    |
-|       +-------+-----------+                                    |
+|  LSM6DSV16X              ADC1 (GPIO1-5)                      |
+|  +----------+            +----------+                          |
+|  | SFLP Quat|            | Flex 0-4 |                          |
+|  | Gyro     |            | (5 ch)   |                          |
+|  +----+-----+            +----+-----+                          |
+|       |                       |                                |
+|       v                       v                                |
+|  quat -> euler[3]        flex_norm[5]                          |
+|  gyro_raw[3]                                                 |
+|       |                       |                                |
+|       +-------+---------------+                                |
 |               v                                                |
 |     Right_SensorData (11-dim)                                  |
 |     = [flex0..flex4, euler_x..z, gyro_x..z]                   |
@@ -907,6 +914,8 @@ Total:   73 bytes
 |                                                                |
 +================================================================+
 ```
+
+> V6: ADS1115×2 removed per glove — flex on internal ADC1 (GPIO1-5), not on I²C. See `07_internal_adc_migration.md`.
 
 ### 8.1 Feature Vector Layout (28-dim)
 

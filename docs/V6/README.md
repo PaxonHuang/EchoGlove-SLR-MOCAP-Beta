@@ -1,8 +1,10 @@
 # EchoGlove V6.0 — Design Document Package
 
-> **Date**: 2026-06-23
+> **Date**: 2026-06-23 (updated 2026-07-01)
 > **Supersedes**: V5.0 DualGloveFlex + V5.2 P4 Base Station
-> **Key Change**: BNO085 ($15-25) → ST-LSM6DSV16X ($2-4) IMU migration
+> **Key Changes**:
+> - **IMU**: BNO085 ($15-25) → ST-LSM6DSV16X ($2-4)
+> - **ADC**: 2× ADS1115 (¥8/glove) → **ESP32-S3 internal ADC1** (¥0) — see `07_internal_adc_migration.md`
 
 ## Document Index
 
@@ -10,21 +12,24 @@
 |---|------|-------|---------|
 | 1 | `01_architecture_diagrams.md` | 1024 | System architecture, data flow, I2C topology, FreeRTOS tasks, 3-tier pipeline, communication stack, hot-switch, dual-hand features |
 | 2 | `02_BOM_table.md` | 310 | Per-glove BOM, base station BOM, dev BOM, V5 vs V6 cost comparison, suppliers, breakout board options |
-| 3 | `03_wiring_diagram.md` | 395 | LSM6DSV16X pinout, I2C bus, flex sensor circuit, ADS1115 channels, C6↔P4 UART, P4 connections, BNO085→LSM6DSV16X migration |
+| 3 | `03_wiring_diagram.md` | 395 | LSM6DSV16X pinout, I2C bus, flex sensor circuit, C6↔P4 UART, P4 connections, BNO085→LSM6DSV16X migration |
 | 4 | `04_SOP-SPEC-PLAN_V6.md` | 780 | **Main spec** — 12 sections: system overview, hardware, firmware, communication, relay, frontend, data/training, migration plan, references, risks, open questions, innovations |
 | 5 | `05_claude_code_prompts.md` | 977 | 7 implementation phases with paste-ready Claude Code prompts (Chinese), file path reference, BNO085 vs LSM6DSV16X comparison |
 | 6 | `06_decision_summary.md` | 279 | 10 decisions logged, V5→V6 changes, cost analysis, risk assessment, compatibility matrix, future considerations, approval status |
+| 7 | `07_internal_adc_migration.md` | NEW | **Internal ADC1 migration** — replaces 2× ADS1115: quantitative ENOB justification, IFlexSensor abstraction, InternalADCManager.h, NVS calibration, ADC1/ADC2 coexistence, validation plan, stale-fix list |
 
-**Total**: 3,765 lines
+**Total**: ~4,500 lines (incl. 07)
 
 ## Quick Reference
 
-- **IMU**: LSM6DSV16X @ 0x6A (SDO=GND), 6-axis, SFLP embedded fusion, $2-4
+- **IMU**: LSM6DSV16X @ 0x6A (SDO=GND), 6-axis, SFLP embedded fusion, $2-4 — **only I²C device**
+- **ADC**: ESP32-S3 internal **ADC1** (GPIO1-5), `analogReadMilliVolts` + N=16 oversampling, NVS-calibrated — **no external ADC**
+- **Flex**: 5× flex on 47kΩ divider → ADC1_CH0-4 (was ADS1115@0x48/0x49 in V5)
 - **Feature Vector**: 11-dim single hand (unchanged), 28-dim dual hand (unchanged)
 - **ESP-NOW Packet**: 69 bytes (unchanged)
 - **SensorData Interface**: Identical to V5 — zero downstream changes
-- **Cost Savings**: $26-42 per pair of gloves
-- **Migration Effort**: ~400 lines new code, ~30 lines changed
+- **Cost Savings**: $26-42 (IMU) + ¥16/pair (ADC removal) per pair of gloves
+- **Migration Effort**: ~400 lines new code (IMU), ~250 lines (ADC + IFlexSensor), ~30 lines changed
 
 ## Historical Versions
 

@@ -90,7 +90,7 @@
 | D5 | Flex sensor | SpectraFlex 2.2" | Domestic for dev, Spectra Symbol for production |
 | D6 | Pull-down resistor | 47kΩ | Optimal voltage divider range |
 | D7 | Feature dimensions | 11 per hand | Minimum viable for gesture classification |
-| D8 | I2C topology | Flat bus (no MUX) | LSM6DSV16X@0x6A + ADS1115@0x48 + ADS1115@0x49 |
+| D8 | I2C topology | Flat bus (no MUX) | **V6: LSM6DSV16X@0x6A only** (ADS1115×2 removed — flex on internal ADC1, see `07`). Prev V5: BNO085@0x4B + ADS1115@0x48/0x49 |
 | D9 | Calibration | 6s (3s open + 3s fist) | Sufficient for 5-point piecewise linear |
 | D10 | Receiver | P4 smart base station | Inference + display + audio, standalone capable |
 | D11 | Tier2 model | Gated Bi-CrossAttn (~80KB) | Fits ESP32-P4, cross-hand attention |
@@ -108,7 +108,7 @@
 |-----------|-------|-----|-----------|------|-------|
 | MCU | ESP32-S3-DevKitC-1 N16R8 | 1 | - | ~¥30 | 8MB Flash + 8MB PSRAM |
 | IMU | **LSM6DSV16X** | 1 | I2C 0x6A | **~¥3** | 6-axis, SFLP fusion, LGA-14L |
-| ADC | ADS1115 (4ch 16-bit) | 2 | I2C 0x48, 0x49 | ~¥8 | 2-3 flex sensors per ADC |
+| ADC | **ESP32-S3 internal ADC1** (no external chip) | 0 | ADC1 GPIO1-5 | ¥0 | V6: replaces 2× ADS1115. 5 flex on ADC1_CH0-4, see `07_internal_adc_migration.md` (saves ¥8/glove). Prev V5: 2× ADS1115@0x48/0x49 |
 | Flex sensor | SpectraFlex 2.2" | 5 | Analog → ADS1115 | ~¥15 | Domestic alternative for dev |
 | Pull-down resistor | 47kΩ | 5 | - | ~¥0.5 | Voltage divider |
 | Wiring | Breadboard + Dupont | - | - | ~¥5 | Development phase |
@@ -125,16 +125,18 @@
 | MicroSD | 16GB Class10 | 1 | TTS PCM storage |
 | USB-C cable | USB 2.0 HS | 1 | P4 to PC connection |
 
-### 2.3 I2C Topology (Flat Bus, No MUX)
+### 2.3 I2C Topology (Flat Bus, No MUX) — V6 single-device
+
+> **V6 change**: the 2× ADS1115 ADCs are **removed** (flex readout moved to ESP32-S3 internal ADC1, see §2.6 and `07_internal_adc_migration.md`). The I²C bus now carries a **single** device.
 
 ```
 ESP32-S3 (SDA=GPIO8, SCL=GPIO9, 400kHz)
-  ├── LSM6DSV16X  @ 0x6A  (SDO/SA0=GND)    ← NEW: replaces BNO085@0x4B
-  ├── ADS1115 #1  @ 0x48  (Ch0=Thumb, Ch1=Index, Ch2=Middle)
-  └── ADS1115 #2  @ 0x49  (Ch3=Ring, Ch4=Pinky)
+  └── LSM6DSV16X  @ 0x6A  (SDO/SA0=GND)    ← ONLY I2C device (replaces BNO085@0x4B)
 ```
 
-**Address change**: BNO085@0x4B → LSM6DSV16X@0x6A (SDO/SA0=GND) or @0x6B (SDO/SA0=VDD)
+- **Prev (V5)**: BNO085@0x4B + ADS1115@0x48 + ADS1115@0x49 (3 devices)
+- **V6**: LSM6DSV16X@0x6A only (1 device) — flex sensors no longer on I²C
+- **Address**: BNO085@0x4B → LSM6DSV16X@0x6A (SDO/SA0=GND) or @0x6B (SDO/SA0=VDD)
 
 ### 2.4 LSM6DSV16X Wiring (ESP32-S3-DevKitC-1 N16R8)
 
@@ -162,11 +164,16 @@ ESP32-S3 (SDA=GPIO8, SCL=GPIO9, 400kHz)
 3.3V ──┤Flex Sensor├── ADC Input ──┤47kΩ├── GND
 ```
 
-### 2.6 ADS1115 Configuration (Unchanged from V5)
+### 2.6 Internal ADC1 Configuration (replaces ADS1115) — see `07_internal_adc_migration.md`
 
-- Gain: ±4.096V (PGA=1), covers 0-3.3V flex sensor range
-- Sample rate: 860 SPS per channel; 4 channels polled ≈ 215Hz/channel, sufficient for 100Hz
-- Data format: 16-bit signed → normalize to [0, 1]
+> **V6 change**: ADS1115×2 **removed**. The 5 flex sensors are read by the **ESP32-S3 internal ADC1** (GPIO1–GPIO5). Full design, quantitative justification, and `InternalADCManager.h` in `07_internal_adc_migration.md`.
+
+- **Pin map**: Thumb=ADC1_CH0/GPIO1, Index=CH1/GPIO2, Middle=CH2/GPIO3, Ring=CH3/GPIO4, Pinky=CH4/GPIO5
+- **API**: `analogReadMilliVolts()` + N=16 software oversampling → ~12–13 effective bits, <1 ms/frame
+- **Attenuation**: `ADC_ATTEN_DB_12` (~0–2.5 V usable); divider output 0.90–2.15 V sits inside
+- **Calibration**: raw min/max per channel **persisted to NVS** (`Preferences`) — fixes V5 RAM-only bug
+- **Abstraction**: `IFlexSensor` interface (`lib/Sensors/IFlexSensor.h`); `InternalADCManager` implements it, `ADS1115Manager` kept as optional V5-compat impl
+- **ADC1 only** (not ADC2): ADC2 GPIO11–20 is locked by WiFi/ESP-NOW — see `07` §7
 
 ### 2.7 LSM6DSV16X Key Specifications
 
@@ -260,9 +267,11 @@ struct GlovePacket {                    // 69 bytes, ESP-NOW broadcast
 |--------|------|--------|-------------|
 | **LSM6DSV16XManager** | `lib/Sensors/LSM6DSV16XManager.h` | **NEW** | ST driver wrapper, SFLP quaternion + gyro, I2C 0x6A |
 | **MadgwickFilter** | `lib/Filters/MadgwickFilter.h` | **NEW** | 6-axis sensor fusion fallback (if SFLP unavailable) |
-| ADS1115Manager | `lib/Sensors/ADS1115Manager.h` | Unchanged | Dual ADS1115 driver, I2C 0x48+0x49 |
-| FlexManager | `lib/Sensors/FlexManager.h` | Unchanged | Read from ADS1115, 5-point calibration |
-| **SensorManager** | `lib/Sensors/SensorManager.h` | **Modified** | Replace BNO085 calls with LSM6DSV16X calls |
+| **IFlexSensor** | `lib/Sensors/IFlexSensor.h` | **NEW** | Strategy/Adapter interface for flex source (see `07_internal_adc_migration.md` §4) |
+| **InternalADCManager** | `lib/Sensors/InternalADCManager.h` | **NEW** | V6 default — ESP32-S3 internal ADC1 (GPIO1-5), `analogReadMilliVolts` + N=16 oversample, NVS calibration (replaces ADS1115Manager) |
+| ADS1115Manager | `lib/Sensors/ADS1115Manager.h` | Optional (V5-compat) | Kept behind IFlexSensor for back-compat; NOT used in V6 default path |
+| FlexManager | `lib/Sensors/FlexManager.h` | **Modified** | Depends on IFlexSensor* (not ADS1115Manager); raw min/max persisted to NVS |
+| **SensorManager** | `lib/Sensors/SensorManager.h` | **Modified** | Replace BNO085 calls with LSM6DSV16X calls; owns IFlexSensor* |
 | ESP-NOW Comms | `lib/Comms/ESPNOWTransmitter.h` | Unchanged | 69-byte broadcast packet |
 | Tier1 Model | `lib/Inference/Tier1Model.h` | Unchanged | Input 11-dim, output 46 classes |
 | KalmanFilter1D | `lib/Filters/KalmanFilter1D.h` | Unchanged | 11-channel filter |

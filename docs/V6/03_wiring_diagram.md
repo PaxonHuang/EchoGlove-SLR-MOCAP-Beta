@@ -9,41 +9,38 @@
 
 ## 1. Per-Glove I2C Bus Diagram
 
-Flat bus topology, no MUX. All three devices share GPIO8 (SDA) / GPIO9 (SCL) at 400 kHz.
+Flat bus topology, no MUX. In V6 the I²C bus carries a single device (LSM6DSV16X); the two ADS1115 ADCs were removed and flex sensors now use the ESP32-S3 internal ADC1 (see `07_internal_adc_migration.md`). GPIO8 (SDA) / GPIO9 (SCL) at 400 kHz.
 
 ```
                         ESP32-S3-DevKitC-1 N16R8
                       ┌──────────────────────────────┐
                       │                                │
-                      │   GPIO8 (SDA) ──┬────┬────┐   │
-                      │                  │    │    │   │
-                      │   GPIO9 (SCL) ──┬┼────┼────┤   │
-                      │                  ││    │    │   │
-                      │              4.7kΩ  4.7kΩ  (pull-ups to 3.3V)
-                      │                  ││    │    │   │
-                      │                  ││    │    │   │
-                      └──────────────────┼┼────┼────┘   │
-                                         ││    │    │
-                  ┌──────────────────────┘│    │    │
-                  │  ┌────────────────────┘    │    │
-                  │  │  ┌─────────────────────┘    │
-                  │  │  │                           │
-          ┌───────┴──┴──┴───────┐   ┌──────────┐   ┌──────────────┐
-          │  LSM6DSV16X         │   │ ADS1115  │   │  ADS1115     │
-          │  (IMU)              │   │  #1      │   │  #2          │
-          │                     │   │ @ 0x48   │   │  @ 0x49      │
-          │  ADDR = 0x6A        │   │          │   │              │
-          │  (SDO/SA0 = GND)    │   │ ADDR=GND │   │ ADDR=VDD    │
-          └─────────────────────┘   └──────────┘   └──────────────┘
+                      │   GPIO8 (SDA) ──┬──── 4.7kΩ pull-up ── 3.3V
+                      │                  │
+                      │   GPIO9 (SCL) ──┬┘
+                      │                  │
+                      │              4.7kΩ (pull-up to 3.3V)
+                      │                  │
+                      └──────────────────┼─┘
+                                         │
+                  ┌──────────────────────┘
+                  │
+          ┌───────┴───────────────┐
+          │  LSM6DSV16X           │
+          │  (IMU)                │
+          │  ADDR = 0x6A          │
+          │  (SDO/SA0 = GND)      │
+          └───────────────────────┘
 
-  I2C Address Map:
+  I2C Address Map (V6 — single device):
   ┌───────────────────┬───────────┬────────────────────────┐
   │ Device            │ Address   │ Notes                  │
   ├───────────────────┼───────────┼────────────────────────┤
   │ LSM6DSV16X        │ 0x6A      │ SDO/SA0=GND            │
-  │ ADS1115 #1        │ 0x48      │ ADDR=GND               │
-  │ ADS1115 #2        │ 0x49      │ ADDR=3.3V (VDD)        │
   └───────────────────┴───────────┴────────────────────────┘
+
+  V6: ADS1115×2 removed — flex on internal ADC1 (GPIO1-5), see 07.
+  (V5, removed: BNO085 @ 0x4B; ADS1115 @ 0x48 / 0x49.)
 ```
 
 ---
@@ -88,7 +85,7 @@ Flat bus topology, no MUX. All three devices share GPIO8 (SDA) / GPIO9 (SCL) at 
 
 ## 3. Flex Sensor Circuit
 
-Each flex sensor forms a voltage divider with a 47k ohm fixed resistor. Five channels total, read by two ADS1115 ADCs.
+Each flex sensor forms a voltage divider with a 47k ohm pull-down resistor. Five channels total, read by the ESP32-S3 internal ADC1 (GPIO1-5). The voltage divider is unchanged from V5; only the ADC front-end changed (ADS1115 removed). See `07_internal_adc_migration.md`.
 
 ```
   Voltage Divider (per channel):
@@ -101,10 +98,10 @@ Each flex sensor forms a voltage divider with a 47k ohm fixed resistor. Five cha
    │  Sensor │
    └────┬────┘
         │
-        ├──────────── To ADS1115 analog input (AINx)
+        ├──────────── To ESP32-S3 ADC1 input (GPIO1-5)
         │
    ┌────┴────┐
-   │  47kΩ   │   Fixed resistor (1% tolerance recommended)
+   │  47kΩ   │   Fixed pull-down resistor (1% tolerance recommended)
    │  (fixed)│
    └────┬────┘
         │
@@ -121,35 +118,32 @@ Each flex sensor forms a voltage divider with a 47k ohm fixed resistor. Five cha
 
   V_out = 3.3V * (47k / (R_flex + 47k))
 
-  ADS1115 Gain Setting: PGA = 4.096V range (GAIN_ONE)
-  Resolution: 4.096V / 32768 = 0.125 mV per count
+  Internal ADC1 settings (V6):
+    - ADC_ATTEN_DB_12  (0-~2.5V usable range w/ 12dB attenuation)
+    - analogReadMilliVolts() for calibrated mV
+    - N=16 oversample per channel for noise reduction
 ```
 
 ---
 
-## 4. ADS1115 Channel Assignment Table
+## 4. Flex Sensor → ADC1 Channel Assignment (V6)
 
-| ADS1115 | I2C Addr | Channel | AIN Pin | Finger  | GPIO Connect     | Notes              |
-|---------|----------|---------|---------|---------|------------------|--------------------|
-| #1      | 0x48     | AIN0    | A0      | Thumb   | Flex divider out  | ADDR pin = GND     |
-| #1      | 0x48     | AIN1    | A1      | Index   | Flex divider out  |                    |
-| #1      | 0x48     | AIN2    | A2      | Middle  | Flex divider out  |                    |
-| #1      | 0x48     | AIN3    | A3      | --      | NC               | Unused, can float  |
-| #2      | 0x49     | AIN0    | A0      | Ring    | Flex divider out  | ADDR pin = 3.3V    |
-| #2      | 0x49     | AIN1    | A1      | Pinky   | Flex divider out  |                    |
-| #2      | 0x49     | AIN2    | A2      | --      | NC               | Unused, can float  |
-| #2      | 0x49     | AIN3    | A3      | --      | NC               | Unused, can float  |
+V6 removed the two ADS1115 ADCs. Flex sensors connect directly to ESP32-S3 ADC1 GPIO pins. The voltage divider (flex + 47kΩ pull-down) is unchanged from V5. See `07_internal_adc_migration.md`.
 
-**ADS1115 ADDR Pin Configuration**:
-- ADS1115 #1: ADDR pin connected to GND --> I2C address 0x48
-- ADS1115 #2: ADDR pin connected to 3.3V (VDD) --> I2C address 0x49
+| Finger  | ADC1 Channel | GPIO | Connect To        | Notes                      |
+|---------|--------------|------|-------------------|----------------------------|
+| Thumb   | ADC1_CH0     | GPIO1| Flex divider out  | analogReadMilliVolts, N=16 |
+| Index   | ADC1_CH1     | GPIO2| Flex divider out  | analogReadMilliVolts, N=16 |
+| Middle  | ADC1_CH2     | GPIO3| Flex divider out  | analogReadMilliVolts, N=16 |
+| Ring    | ADC1_CH3     | GPIO4| Flex divider out  | analogReadMilliVolts, N=16 |
+| Pinky   | ADC1_CH4     | GPIO5| Flex divider out  | analogReadMilliVolts, N=16 |
 
-**ADS1115 Power**:
-- VDD = 3.3V
-- GND = GND
-- SDA = GPIO8 (shared I2C bus)
-- SCL = GPIO9 (shared I2C bus)
-- ALERT/RDY = NC (not used unless data-ready interrupt needed)
+**Internal ADC1 Configuration**:
+- Attenuation: `ADC_ATTEN_DB_12` (0-~2.5V usable range)
+- Read: `analogReadMilliVolts(pin)` for factory-calibrated mV
+- Oversample: N=16 samples averaged per channel per 100Hz tick
+- Driver: `InternalADCManager.h` (implements `IFlexSensor`), replaces V5 `ADS1115Manager.h`
+- Wiring: flex divider output → GPIO1-5 directly (no I²C, no external ADC chip)
 
 ---
 
@@ -264,8 +258,7 @@ The ESP32-C6 co-processor relays ESP-NOW glove data to the ESP32-P4 main process
 
 - **Entire I2C bus is 3.3V.** Never connect 5V to any I2C pin.
 - LSM6DSV16X VDD and VDDIO must both be 3.3V.
-- ADS1115 VDD must be 3.3V.
-- Flex sensor voltage divider output is 0-3.3V range, well within ADS1115 input range (0-4.096V with GAIN_ONE).
+- Flex sensor voltage divider output is 0-3.3V range, within ADC1 usable range with `ADC_ATTEN_DB_12` (V6 removed the ADS1115; see `07`).
 
 ### 7.2 I2C Pull-ups
 
@@ -291,8 +284,8 @@ The V6 design removes BNO085 entirely. The following notes are retained for refe
 
 - Flex sensors should be mounted on the glove with the conductive side facing the finger.
 - Solder wires to the flex sensor pads; do not use crimp connectors (unreliable at flex sensor thickness).
-- Keep wire runs from flex sensor to ADS1115 as short as possible to reduce noise.
-- Consider 100nF ceramic capacitor at each ADS1115 analog input for noise filtering.
+- Keep wire runs from flex sensor to the ESP32-S3 ADC1 GPIO pin as short as possible to reduce noise.
+- Consider 100nF ceramic capacitor at each ADC1 analog input (GPIO1-5) for noise filtering.
 
 ### 7.6 Common Ground
 
@@ -306,10 +299,10 @@ The V6 design removes BNO085 entirely. The following notes are retained for refe
 |---------------|-----------------|-------------|---------|
 | ESP32-S3      | 80 mA           | 500 mA      | 3.3V    |
 | LSM6DSV16X    | 0.55 mA         | 1.0 mA      | 3.3V    |
-| ADS1115 #1    | 0.15 mA         | 0.3 mA      | 3.3V    |
-| ADS1115 #2    | 0.15 mA         | 0.3 mA      | 3.3V    |
 | Flex sensors  | ~0.07 mA each   | ~0.14 mA    | 3.3V    |
-| **Total**     | **~85 mA**      | **~502 mA** | **3.3V**|
+| **Total**     | **~81 mA**      | **~501 mA** | **3.3V**|
+
+> V6: ADS1115 #1/#2 rows removed (ADC now internal to ESP32-S3). See `07_internal_adc_migration.md`.
 
 Recommend powering from a 3.7V LiPo with 3.3V LDO regulator (e.g., AP2112K-3.3).
 
@@ -376,20 +369,19 @@ If INT1 is not needed, GPIO10 can be left unconnected and the LSM6DSV16X INT1 pi
   │         │    ├── LSM6DSV16X VDD (pin14)  │   │
   │         │    ├── LSM6DSV16X VDDIO(pin12) │   │
   │         │    ├── LSM6DSV16X CS (pin1)    │   │
-  │         │    ├── ADS1115 #2 ADDR         │   │
   │         │    │                           │   │
   │         ├─── ├── LSM6DSV16X GND (pin4)   │   │
   │         ├─── ├── LSM6DSV16X GND (pin13)  │   │
-  │         ├─── ├── ADS1115 #1 ADDR         │   │
   │         │    │                           │   │
   │  GPIO10 ──────── LSM6DSV16X INT1 (pin9)  │   │
   │                                             │
-  │  Flex Sensors (5x):                         │
-  │    Thumb  --> ADS1115 #1 AIN0               │
-  │    Index  --> ADS1115 #1 AIN1               │
-  │    Middle --> ADS1115 #1 AIN2               │
-  │    Ring   --> ADS1115 #2 AIN0               │
-  │    Pinky  --> ADS1115 #2 AIN1               │
+  │  Flex Sensors (5x) → ADC1 (V6, no ADS1115): │
+  │    Thumb  --> GPIO1 (ADC1_CH0)              │
+  │    Index  --> GPIO2 (ADC1_CH1)              │
+  │    Middle --> GPIO3 (ADC1_CH2)              │
+  │    Ring   --> GPIO4 (ADC1_CH3)              │
+  │    Pinky  --> GPIO5 (ADC1_CH4)              │
+  │    (47kΩ pull-down to GND, divider unchanged)│
   │                                             │
   └─────────────────────────────────────────────┘
 ```

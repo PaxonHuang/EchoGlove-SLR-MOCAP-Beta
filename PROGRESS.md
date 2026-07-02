@@ -655,3 +655,80 @@ Firmware `.proto` established as single source of truth. Relay's `glove_data.pro
 - Adafruit BNO08x library: Works on both platforms
 - PlatformIO build: Works on both platforms
 - Serial monitor: `pio device monitor` works on both (COM6 on Windows, /dev/ttyACMx on Ubuntu)
+---
+
+## 2026-06-28: V5 硬件诊断 + 模拟数据开发线（ADS1115 硬件阻塞，转 mock 推进）
+
+### 硬件诊断结论（关键）
+- **3.3V 电源轨正常**（3.29V）
+- **I²C 总线电压异常**：完整电路时 SDA=1.20V / SCL=1.19V（远低于 V_IH_min≈2.31V）
+- **隔离测试定位元凶**：拔下两块 ADS1115 后总线恢复 3.20V/3.19V → **ADS1115 把总线拉低**
+- **关键异常**：ADS1115 的 SDA↔SCL 之间只有 **300Ω**（正常应 >MΩ），疑似芯片/模块损坏（ESD/过压/出厂不良）
+- **BNO085 接线正确**：PS0=GND, PS1=GND, ADO=3.3V → 0x4B
+- **ESP32-S3 GPIO8/9 无问题**：单拔 ESP32 后总线 3.23V，非 strapping pin，N16R8 上无 PSRAM 冲突
+
+### 待办（硬件，等用户处理）
+- [ ] 单块 ADS1115 隔离测试，定位损坏的具体是哪一块
+- [ ] 更换损坏的 ADS1115 模块
+- [ ] 总线电压恢复 ~3.3V 后，烧录 `pio run -e v5-diag -t upload` 全面诊断
+
+### SOP 文档错误（待修正，已记录在 task #5）
+1. `docs/V5.0DualGloveFlex/.../03_wiring_diagram.md` 第581-588行 BNO085 接线图错误：
+   - PS0 标注为 VDD（错误，应为 GND；PS0=VDD 选 SPI 模式甚至损坏模块）
+   - RST 接到 GND（错误，应为 3.3V 或悬空，GND 会永久复位）
+   - ADO/CS 未显式标注
+2. `glove_firmware/test/test_i2c_scan/README.md` 声称 GPIO8/9 与 Octal PSRAM 冲突 → 与 CLAUDE.md/test_bno085/README.md **矛盾**，该说法对 N16R8 DevKitC-1 **错误**（Octal PSRAM 用 GPIO26-37，非 8/9）
+3. `data_structures.h` 注释说 100kHz 但 `I2CPins::FREQ=400000`，SOP 文档说 100kHz → 频率不一致需统一
+4. `SensorManager.h:117` 故意跳过 BNO085 init（调试 ADS1115 期间）→ 硬件修复后需重新启用
+5. `ADS1115Manager::begin()` 有冗余 `Wire.begin()` 调用 → 修复后清理
+
+### 模拟数据开发线（当前主线，绕过硬件阻塞）
+**策略**：用软件 mock 数据推进 Relay+Web 链路，硬件修好后 `simulation=false` 切回真实数据。
+
+**已完成**：
+- 新建 `glove_relay/src/mock_data.py` — `MockDataSource` 类，30fps 生成 V5 双手格式消息（5种手势循环+插值+噪声）
+- `glove_relay/tests/test_mock_data.py` — 6个测试（schema/range/cycle/pacing/stop/json）
+- `glove_relay/src/utils/config.py` — 新增 `_MockConfig` 配置段
+- `glove_relay/configs/relay_config.yaml` — 新增 `mock:` 段（enabled: true）
+- `glove_relay/src/main.py` — lifespan 集成 mock，mock 模式跳过 model registry（避免缺 checkpoint 报错）
+- 测试通过：`python -m pytest tests/test_mock_data.py tests/test_ws_format_v5.py tests/test_ws_server.py -q` → **22 passed**
+- Relay 服务器实测启动成功：health=ok，mock 模式生效，日志显示 30fps
+
+**进行中 / 待验证**：
+- [ ] WebSocket 数据流验证（写了 `/tmp/test_ws_client.py`，但结果未读）
+- [ ] glove_web 前端联调（`npm run dev`，浏览器看 3D 手渲染）
+- [ ] 更新 glove_relay README、PROGRESS_CN.md
+
+**执行计划文件**：`.claude/plans/relay_web_mock_data.md`（7步，当前在 Step 5/6）
+
+### 新会话恢复指引
+1. **硬件线**：等用户反馈单块 ADS1115 隔离测试结果 → 换模块 → 烧录 v5-diag
+2. **模拟线（优先）**：续跑 `.claude/plans/relay_web_mock_data.md` Step 5-7
+   - 启动 relay：`cd glove_relay && python -m src.main`（要先 `kill $(lsof -ti:8765)` 清端口）
+   - 验证 WS：`python /tmp/test_ws_client.py`
+   - 联调前端：`cd glove_web && npm run dev`
+3. 已知小问题：`serial_asyncio` 模块缺失（USB CDC 路径报错，mock 模式下不影响；真实 P4 联调时需 `pip install pyserial`）
+
+---
+
+## V6 内部 ADC 迁移（2026-07-02，分支 feature/v6-dual-s3p4-flex-lsm6dsv16x）
+
+**决策**：V6 去 ADS1115×2，改用 ESP32-S3 内部 ADC1 (GPIO1-5) 读 5 弯曲传感器。配合已有的 BNO085→LSM6DSV16X IMU 迁移。
+
+**4 个关键决策（用户 AskUserQuestion 确认）**：
+1. ADC API = `analogReadMilliVolts()` + N=16 软件过采样（~12-13 effective bits, <1ms/frame）
+2. 标定存储 = NVS `Preferences` key-value（修 V5 RAM-only bug）
+3. 抽象层 = 新增 `IFlexSensor` 接口（Strategy/Adapter，可切回 ADS1115）
+4. 分压+衰减 = 保 47kΩ + `ADC_ATTEN_DB_12`（硬件零改动）
+
+**本次会话完成（5 缺口补齐）**：
+- ✅ 新建+切换 git 分支 `feature/v6-dual-s3p4-flex-lsm6dsv16x`
+- ✅ 新建 `docs/V6/07_internal_adc_migration.md`：完整深度 spec（ENOB 定量论证 / IFlexSensor / InternalADCManager.h 实现 / NVS 标定 / ADC1/ADC2 共存 / 验证计划 / stale-fix 清单 / 工程权衡矩阵 / 决策日志）
+- ✅ 升级 `docs/V6/` 01-06 + README：消除所有 "ADS1115 unchanged" stale 点（04 §2.3/2.6/3.x 模块表/D8 决策/ADC 硬件行；02 BOM/power/voltage/cost；01 架构图/FreeRTOS task/timing；03 接线；05 prompts；06 决策摘要）。残留 ADS1115 命中均为合法 V5→V6 对比/历史/移除说明上下文
+- ✅ BOM 更新：per-glove ¥55→¥47，per-pair system ¥256-286→¥196-226（省 ¥60-80/pair）
+- ✅ `docs/archive/README.md` 重写为版本索引（Current/Active-reference/Archived 三层）。V5.0/V5.2 spec 因被 CLAUDE.md/PROGRESS.md 引用保留原路径，HARDWARE_DEBUGING 为 V5.2-current 保留
+- ⏸️ graphify 全图构建：descoped 省 token（语义抽取 subagents 烧 token），改用 Explore agent 完成文档审阅。graphify-out/ 已有 detect 缓存待用
+
+**关键事实**：espressif32@^6.5.0 + Arduino 框架 → arduino-esp32 core 2.x，支持 `analogReadMilliVolts` + `ADC_ATTEN_DB_12`。LSM6DSV16X@0x6A（SDO=GND）。迁移后 I²C 总线仅 1 设备。
+
+**下一步**：用 `superpowers:writing-plans` 把 07 + 04 转成实现计划（InternalADCManager.h / IFlexSensor.h / NVS 标定 TDD），然后 TDD 实现。本次文档工作**未 commit**。

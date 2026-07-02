@@ -58,7 +58,7 @@
 
 ## 硬件规格
 - I2C 地址: 0x6A (SDO/SA0=GND) 或 0x6B (SDO/SA0=VDD)
-- I2C 总线: SDA=GPIO8, SCL=GPIO9, 400kHz（与 ADS1115 共享）
+- I2C 总线: SDA=GPIO8, SCL=GPIO9, 400kHz（V6: 仅 LSM6DSV16X 独占，ADS1115 已移除见 `07`）
 - 电源: VDD + VDDIO = 3.3V
 - CS 引脚: 接 3.3V（I2C 模式）
 
@@ -587,10 +587,12 @@ private:
 ### 4. begin() 方法中的 IMU 初始化 (第109-112行)
 ```cpp
 // 改前:
-            // ── BNO085 IMU: SKIP for now — debug ADS1115 first ──
+            // ── BNO085 IMU: not initialized in V5 debug build ──
             _bno_ok = false;
-            Serial.println("[SensorManager] BNO085: SKIPPED (debugging ADS1115)");
-            // TODO: Re-enable after ADS1115 is verified
+            Serial.println("[SensorManager] BNO085: SKIPPED");
+            // NOTE: V6 flex path moved to internal ADC1 — see
+            //       07_internal_adc_migration.md for InternalADCManager
+            //       prompts (replaces V5 ADS1115Manager).
 
 // 改后:
             // ── LSM6DSV16X IMU ──

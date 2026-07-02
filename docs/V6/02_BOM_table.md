@@ -27,13 +27,13 @@ Each glove requires the following components. Quantities below are **per single 
 |---|-----------|---------------------|-----|-----------|------------------|-------------|-------|
 | 1 | MCU | ESP32-S3-DevKitC-1 N16R8 | 1 | — | ¥28 | ¥28 | 8MB Flash + 8MB PSRAM, USB-C, antenna on PCB |
 | 2 | IMU | **LSM6DSV16X** (ST) | 1 | I2C 0x6A | **¥3** | **¥3** | 6-axis, LGA-14L 2.5x3x0.83mm, needs breakout board |
-| 3 | ADC | ADS1115IDGSR (TI) | 2 | I2C 0x48, 0x49 | ¥4 | ¥8 | 4ch 16-bit, MSOP-10; 1x for thumb/index/middle, 1x for ring/pinky |
-| 4 | Flex Sensor | SpectraFlex 2.2" / 国产弯曲传感器 2.2" | 5 | Analog | ¥3 | ¥15 | Resistance range ~25kΩ (flat) to ~125kΩ (bent) |
-| 5 | Pull-down Resistor | 47kΩ 0603 / 插件47kΩ | 5 | — | ¥0.1 | ¥0.5 | Voltage divider with flex sensor |
-| 6 | Decoupling Capacitor | 100nF 0603 ceramic | 5 | — | ¥0.05 | ¥0.25 | 1x per IC power pin (LSM6DSV16X VDD, VDDIO, ADS1115 x2, ESP32-S3 3.3V) |
+| 3 | ADC | **ESP32-S3 internal ADC1** (no external chip) | 0 | ADC1 GPIO1-5 | ¥0 | ¥0 | **V6: replaces 2× ADS1115.** 5 flex sensors on ADC1_CH0-4/GPIO1-5, see `07_internal_adc_migration.md`. Saves ¥8/glove. |
+| 4 | Flex Sensor | SpectraFlex 2.2" / 国产弯曲传感器 2.2" | 5 | Analog (ADC1) | ¥3 | ¥15 | Resistance range ~25kΩ (flat) to ~125kΩ (bent) |
+| 5 | Pull-down Resistor | 47kΩ 0603 / 插件47kΩ | 5 | — | ¥0.1 | ¥0.5 | Voltage divider with flex sensor (unchanged from V5) |
+| 6 | Decoupling Capacitor | 100nF 0603 ceramic | 3 | — | ¥0.05 | ¥0.15 | 1x per IC power pin (LSM6DSV16X VDD, VDDIO, ESP32-S3 3.3V) — ADS1115×2 removed |
 | 7 | Pull-up Resistor | 4.7kΩ 0603 | 2 | — | ¥0.1 | ¥0.2 | I2C SDA/SCL pull-ups (may be on DevKitC already; include for breakout) |
 | | | | | | | | |
-| | **Per-Glove Total** | | | | | **~¥55** | |
+| | **Per-Glove Total** | | | | | **~¥47** | V6: −¥8 vs V5 (ADS1115×2 removed → internal ADC1); see `07_internal_adc_migration.md` |
 
 **Wiring / Connectors (development phase, amortized across gloves)**:
 
@@ -108,12 +108,12 @@ These items are needed for the development bench, shared across the project. Not
 |-----------|----------------|----------------|---------------|
 | 2x IMU (per pair) | ¥40-70 | ¥12-22 | **¥28-48** |
 | 2x ESP32-S3 N16R8 | ¥56 | ¥56 | ¥0 |
-| 4x ADS1115 | ¥32 | ¥32 | ¥0 |
+| 4x ADS1115 | ¥32 | **¥0** (removed — internal ADC1) | **¥32** |
 | 10x Flex sensors | ¥30 | ¥30 | ¥0 |
 | 10x 47kΩ resistors | ¥1 | ¥1 | ¥0 |
 | Wiring (2 gloves) | ¥26 | ¥26 | ¥0 |
 | Base station (C6 + SD + cables) | ¥71 | ¥71 | ¥0 |
-| **System Total** | **¥256-286** | **¥228-258** | **¥28-48** |
+| **System Total** | **¥256-286** | **¥196-226** | **¥60-80** |
 
 ### 4.3 Cost Savings Summary
 
@@ -121,9 +121,12 @@ These items are needed for the development bench, shared across the project. Not
 |--------|-------|
 | Per-glove IMU savings | ¥14-24 |
 | Per-pair IMU savings | ¥28-48 |
-| Per-pair savings (USD equivalent) | **$4-7** |
-| Percentage reduction (IMU only) | **~70-80%** |
-| Full system cost reduction | **~10-17%** |
+| Per-glove ADC savings (ADS1115 removed) | ¥8 |
+| Per-pair ADC savings | **¥32** |
+| Per-pair total savings (IMU + ADC) | **¥60-80** |
+| Per-pair savings (USD equivalent) | **$8-11** |
+| Percentage reduction (IMU + ADC) | **~24-30%** |
+| Full system cost reduction | **~24-30%** |
 
 ### 4.4 Non-Cost Advantages of LSM6DSV16X
 
@@ -160,14 +163,9 @@ These items are needed for the development bench, shared across the project. Not
 | AliExpress | "ESP32-S3 DevKitC N16R8" | $4-6 (~¥29-43) | Check for USB-C and external antenna option |
 | LCSC | ESP32-S3-DevKitC-1-N16R8 | ¥30-35 | Official Espressif distributor |
 
-### 5.3 ADS1115
+### 5.3 ADS1115 — removed in V6
 
-| Platform | Search Term | Typical Price | Notes |
-|----------|-------------|---------------|-------|
-| Taobao | "ADS1115 模块 16位 ADC" | ¥3-5 | Pre-soldered breakout with pin headers |
-| Taobao | "ADS1115IDGSR" (chip only) | ¥2-4 | MSOP-10; needs own PCB |
-| AliExpress | "ADS1115 16-bit ADC module" | $0.80-1.50 (~¥6-11) | Widely available |
-| LCSC | ADS1115IDGSR | ¥3-5 | TI authorized distributor |
+ADS1115 removed in V6 — flex on internal ADC1 (GPIO1-5). No vendor part. See `07_internal_adc_migration.md`.
 
 ### 5.4 Flex Sensors
 
@@ -254,10 +252,8 @@ Components: ~¥5 per board
 |--------|---------|---------------------|-----------|
 | LSM6DSV16X | 0x6A | SDO/SA0 = GND | No |
 | LSM6DSV16X (alt) | 0x6B | SDO/SA0 = VDD | Not used |
-| ADS1115 #1 | 0x48 | ADDR = GND | No |
-| ADS1115 #2 | 0x49 | ADDR = VDD | No |
 
-Total: 3 devices on flat I2C bus, no address conflicts, no MUX needed.
+Total: 1 device on flat I2C bus (V6 removed ADS1115 @ 0x48/0x49 — flex on internal ADC1, see `07`). No MUX needed.
 
 ### 7.2 Power Budget (Per Glove)
 
@@ -266,11 +262,10 @@ Total: 3 devices on flat I2C bus, no address conflicts, no MUX needed.
 | ESP32-S3 (WiFi TX) | ~240mA | ~10µA (deep sleep) | WiFi not used in glove mode; ESP-NOW only |
 | ESP32-S3 (ESP-NOW TX) | ~130mA | — | Active mode, ESP-NOW broadcast |
 | LSM6DSV16X | 0.65mA | 0.17µA (power-down) | Accel+Gyro combo at 104Hz |
-| ADS1115 x2 | 0.3mA (x2) | 0.015µA (x2) | Continuous conversion mode |
 | Flex sensors (passive) | ~0.07mA total | 0mA | Voltage divider, V/R = 3.3V/(25k+47k) |
-| **Total per glove** | **~132mA** | — | At 3.3V = **~0.44W** |
+| **Total per glove** | **~131mA** | — | At 3.3V = **~0.43W** (V6: ADS1115×2 removed, internal ADC1 — see `07`) |
 
-**Estimated battery life**: 500mAh LiPo / 132mA = **~3.8 hours** continuous use.
+**Estimated battery life**: 500mAh LiPo / 131mA = **~3.8 hours** continuous use.
 
 ### 7.3 Flex Sensor Voltage Divider
 
@@ -278,11 +273,11 @@ Total: 3 devices on flat I2C bus, no address conflicts, no MUX needed.
 3.3V ──┤Flex Sensor (25k-125kΩ)├── ADC Input ──┤47kΩ├── GND
 ```
 
-| Bend State | Flex Resistance | Voltage at ADC | ADS1115 Reading (16-bit) |
+| Bend State | Flex Resistance | Voltage at ADC | ADC1 reading (internal, 12-bit) |
 |------------|-----------------|----------------|--------------------------|
-| Flat (0°) | ~25kΩ | 3.3V × 47k/(25k+47k) = 2.16V | ~21,300 |
-| 45° | ~50kΩ | 3.3V × 47k/(50k+47k) = 1.60V | ~15,800 |
-| 90° (full bend) | ~125kΩ | 3.3V × 47k/(125k+47k) = 0.90V | ~8,900 |
+| Flat (0°) | ~25kΩ | 3.3V × 47k/(25k+47k) = 2.16V | ~2850 |
+| 45° | ~50kΩ | 3.3V × 47k/(50k+47k) = 1.60V | ~2110 |
+| 90° (full bend) | ~125kΩ | 3.3V × 47k/(125k+47k) = 0.90V | ~1190 |
 
 ### 7.4 Minimum Order Quantities
 
@@ -291,7 +286,7 @@ For a **single development prototype** (2 gloves + base station):
 | Component | Min Order Qty | Needed | Surplus |
 |-----------|---------------|--------|---------|
 | LSM6DSV16X breakout | 1 | 2 | — |
-| ADS1115 module | 1 | 4 | — |
+| (internal ADC1 — no module) | — | — | — |
 | ESP32-S3 N16R8 | 1 | 2 | — |
 | Flex sensor | 1 | 10 | — |
 | 47kΩ resistor (reel) | 100 | 10 | 90 (keep for spares) |

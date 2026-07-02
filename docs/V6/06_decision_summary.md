@@ -51,7 +51,7 @@
 | Feature vector (11-dim per hand) | flex[5] + euler[3] + gyro[3] — unchanged |
 | Dual-hand features (28-dim) | Left[11] + Right[11] + Relative[6] — unchanged |
 | FreeRTOS task architecture | Same 4 tasks, same core assignment, same priorities |
-| ADS1115 drivers | No change to ADC or flex sensor handling |
+| ADS1115 drivers | REMOVED — internal ADC1 (`07_internal_adc_migration.md`); ADS1115Manager kept as optional V5-compat impl behind `IFlexSensor` |
 | Flex sensor hardware | Same SpectraFlex 2.2", same 47k pull-down |
 | ESP-NOW protocol | Same broadcast, same packet format, same timing |
 | UART protocol (C6 to P4) | Same 2Mbps, same CRC-16 frame format |
@@ -80,6 +80,8 @@
 | Breakout board / PCB | $1.00 | $1.50 | +$0.50 |
 | Wiring / connectors | $0.75 | $0.75 | $0 |
 | **Total per glove** | **$28.15** | **$13.65** | **-$14.50** |
+
+> **V6 ADC savings (not reflected above):** V6 also removes ADS1115×2 (−¥16/pair, see `07_internal_adc_migration.md` §10). The ADS1115 row in this table predates the internal-ADC decision and is retained for IMU-migration comparison only; excluding ADS1115 lowers the per-glove total further (≈ −¥8/glove / −$1.10 per glove).
 
 ### 3.2 Per-Pair and Scaled Cost
 
@@ -226,7 +228,7 @@
 | Aspect | Detail |
 |--------|--------|
 | Current | Breadboard + breakout boards for development |
-| Future | Custom PCB integrating ESP32-S3 module + LSM6DSV16X + 2x ADS1115 + flex connectors |
+| Future | Custom PCB integrating ESP32-S3 module + LSM6DSV16X + flex connectors (internal ADC1, no external ADC) |
 | Benefit | Reduced wiring, smaller form factor, production-ready |
 | Timeline | Post-competition, when design is frozen |
 
