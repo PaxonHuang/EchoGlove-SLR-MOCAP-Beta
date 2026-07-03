@@ -1,16 +1,23 @@
 /* =============================================================================
- * EchoGlove V5 — Sensor Manager
+ * EchoGlove V6 — Sensor Manager
  * =============================================================================
- * Unified sensor manager for V5 firmware.
+ * Unified sensor manager for V6 firmware.
+ *
+ * V6 changes (vs V5):
+ *   - Flex source: ESP32-S3 internal ADC1 (GPIO1-5) via InternalADCManager
+ *     (replaces 2× ADS1115). Injected as IFlexSensor* into FlexManager.
+ *   - IMU path: BNO085 still SKIP'd (LSM6DSV16X migration is a separate
+ *     V6 task — see project_v6_migration_plan). IMU returns zeros for now.
+ *   - I2C bus: only LSM6DSV16X@0x6A will remain once IMU migration lands;
+ *     for now no I2C devices are required for the flex-only path.
  *
  * Hardware mode (simulation=false):
- *   - Flex sensors: 5x Spectra Symbol via 2x ADS1115 (0x48, 0x49)
- *   - IMU: BNO085 (0x4B) via Adafruit BNO08x library
- *   - I2C bus: flat, GPIO8=SDA, GPIO9=SCL, 100kHz
+ *   - Flex: 5× internal ADC1 (GPIO1-5), N=16 oversample + Kalman + NVS calib
+ *   - IMU: zeros (pending LSM6DSV16XManager)
  *
  * Simulation mode (simulation=true):
  *   - Generates synthetic 11-dimensional data with 20 gesture signatures
- *   - No I2C hardware access
+ *   - No hardware access
  *
  * Output: 11-dim feature vector per hand:
  *   flex[5] + euler[3] + gyro[3]  =  SINGLE_HAND_FEATURES (11)
@@ -25,8 +32,8 @@
 #ifndef UNIT_TEST
 #include <Arduino.h>
 #include <Wire.h>
-#include <Adafruit_BNO08x.h>
-#include "ADS1115Manager.h"
+#include "IFlexSensor.h"
+#include "InternalADCManager.h"
 #include "FlexManager.h"
 #else
 // Stubs for native test builds
@@ -34,6 +41,9 @@ static uint32_t _sim_millis = 0;
 static inline uint32_t millis() { return _sim_millis += 10; }
 static inline uint32_t esp_timer_get_time() { return (uint32_t)millis() * 1000; }
 static inline uint32_t esp_random() { return (uint32_t)rand(); }
+#include "IFlexSensor.h"
+#include "InternalADCManager.h"
+#include "FlexManager.h"
 #endif
 
 class SensorManager {
@@ -55,7 +65,17 @@ public:
           _simulation_mode(false),
           _seq(0),
           _sim_gesture_id(0),
-          _sim_frame_counter(0) {
+          _sim_frame_counter(0),
+          _flex_source(nullptr) {
+    }
+
+    ~SensorManager() {
+#ifndef UNIT_TEST
+        if (_flex_source) {
+            delete _flex_source;
+            _flex_source = nullptr;
+        }
+#endif
     }
 
     // =========================================================================
@@ -71,53 +91,24 @@ public:
 
 #ifndef UNIT_TEST
         Serial.println("========================================");
-        Serial.printf("[SensorManager] V5 init: mode=%s\n",
+        Serial.printf("[SensorManager] V6 init: mode=%s\n",
                       _simulation_mode ? "SIMULATION" : "HARDWARE");
 
         if (!_simulation_mode) {
-            // ── Initialize I2C bus first ──
-            Wire.begin(I2CPins::SDA, I2CPins::SCL, I2CPins::FREQ);
-            Wire.setTimeOut(50);  // 50ms timeout per transaction (prevents hangs)
-            Serial.printf("[SensorManager] I2C bus init: SDA=%d SCL=%d %dkHz\n",
-                          I2CPins::SDA, I2CPins::SCL, I2CPins::FREQ / 1000);
-
-            // ── Probe expected I2C addresses (skip full scan to avoid hangs) ──
-            Serial.println("[SensorManager] Probing I2C devices...");
-            int found = 0;
-            uint8_t targets[] = {0x48, 0x49, 0x4B};
-            const char* names[] = {"ADS1115 #1", "ADS1115 #2", "BNO085"};
-            for (int i = 0; i < 3; i++) {
-                uint32_t t0 = millis();
-                Wire.beginTransmission(targets[i]);
-                uint8_t err = Wire.endTransmission();
-                uint32_t dt = millis() - t0;
-                if (err == 0) {
-                    Serial.printf("  [OK] 0x%02X (%s) %dms\n", targets[i], names[i], dt);
-                    found++;
-                } else {
-                    Serial.printf("  [--] 0x%02X (%s) err=%d %dms\n", targets[i], names[i], err, dt);
-                }
+            // ── V6: Initialize internal ADC1 flex source ──
+            _flex_source = new InternalADCManager();
+            if (!_flex_source || !_flex_source->begin()) {
+                Serial.println("[SensorManager] FATAL: InternalADC init failed");
+                return false;
             }
-            Serial.printf("[SensorManager] I2C probe: %d/3 device(s) found\n", found);
+            Serial.println("[SensorManager] InternalADC1: OK (GPIO1-5, N=16)");
 
-            if (found == 0) {
-                Serial.println("[SensorManager] WARNING: No I2C devices found!");
-                Serial.println("[SensorManager] Check wiring: GPIO8=SDA, GPIO9=SCL, 4.7k pull-ups to 3.3V");
-            }
+            // ── FlexManager linked to IFlexSensor* ──
+            _flex.begin(_flex_source);
+            Serial.println("[SensorManager] FlexManager: linked to InternalADCManager");
 
-            // ── Initialize ADS1115 (flex sensors) ──
-            // Note: ADS1115Manager.begin() will call Wire.begin() again, but that's OK
-            bool adc_ok = _adc.begin(false);
-            Serial.printf("[SensorManager] ADS1115: %s\n", adc_ok ? "OK" : "FAIL");
-
-            // ── Initialize FlexManager with ADS1115 ──
-            _flex.begin(&_adc);
-            Serial.println("[SensorManager] FlexManager: linked to ADS1115");
-
-            // ── BNO085 IMU: SKIP for now — debug ADS1115 first ──
-            _bno_ok = false;
-            Serial.println("[SensorManager] BNO085: SKIPPED (debugging ADS1115)");
-            // TODO: Re-enable after ADS1115 is verified
+            // ── IMU: SKIP (LSM6DSV16X migration is a separate V6 task) ──
+            Serial.println("[SensorManager] IMU: zeros (LSM6DSV16X pending)");
         }
 
         Serial.printf("[SensorManager] %d gesture signatures loaded\n", NUM_GESTURES);
@@ -190,11 +181,11 @@ private:
     uint32_t  _sim_frame_counter;
 
 #ifndef UNIT_TEST
-    // Hardware drivers
-    ADS1115Manager  _adc;
-    FlexManager     _flex;
-    Adafruit_BNO08x _bno;
-    bool            _bno_ok = false;
+    IFlexSensor*   _flex_source;
+    FlexManager    _flex;
+#else
+    IFlexSensor*   _flex_source;
+    FlexManager    _flex;
 #endif
 
     // =========================================================================
@@ -203,45 +194,23 @@ private:
 
     void readHardware(SensorData& data) {
 #ifndef UNIT_TEST
-        // ── Flex sensors (ADS1115) ──
+        // ── Flex sensors (V6 internal ADC1) ──
         _flex.read(data.flex);
 
-        // ── IMU (BNO085) ──
-        if (_bno_ok) {
-            sh2_SensorValue_t sensor;
-            float qw = 1, qx = 0, qy = 0, qz = 0;
-            bool got_quat = false;
-
-            // Read all available reports
-            while (_bno.getSensorEvent(&sensor)) {
-                if (sensor.sensorId == SH2_ROTATION_VECTOR) {
-                    qw = sensor.un.rotationVector.real;
-                    qx = sensor.un.rotationVector.i;
-                    qy = sensor.un.rotationVector.j;
-                    qz = sensor.un.rotationVector.k;
-                    got_quat = true;
-                }
-                if (sensor.sensorId == SH2_GYROSCOPE_CALIBRATED) {
-                    data.gyro[0] = sensor.un.gyroscope.x * 57.2958f; // rad/s → deg/s
-                    data.gyro[1] = sensor.un.gyroscope.y * 57.2958f;
-                    data.gyro[2] = sensor.un.gyroscope.z * 57.2958f;
-                }
-            }
-
-            // Store quaternion
-            data.quaternion[0] = qw;
-            data.quaternion[1] = qx;
-            data.quaternion[2] = qy;
-            data.quaternion[3] = qz;
-
-            // Quaternion → Euler (ZYX convention)
-            if (got_quat) {
-                data.euler[0] = atan2f(2*(qw*qx + qy*qz), 1 - 2*(qx*qx + qy*qy)) * 57.2958f;
-                float sinp = 2*(qw*qy - qz*qx);
-                data.euler[1] = (fabsf(sinp) >= 1) ? copysignf(90.0f, sinp) * 57.2958f : asinf(sinp) * 57.2958f;
-                data.euler[2] = atan2f(2*(qw*qz + qx*qy), 1 - 2*(qy*qy + qz*qz)) * 57.2958f;
-            }
-        }
+        // ── IMU: zeros until LSM6DSV16X migration lands ──
+        // (BNO085 path removed; LSM6DSV16XManager will populate these)
+        data.quaternion[0] = 1.0f;
+        data.quaternion[1] = 0.0f;
+        data.quaternion[2] = 0.0f;
+        data.quaternion[3] = 0.0f;
+        data.euler[0] = 0.0f;
+        data.euler[1] = 0.0f;
+        data.euler[2] = 0.0f;
+        data.gyro[0] = 0.0f;
+        data.gyro[1] = 0.0f;
+        data.gyro[2] = 0.0f;
+#else
+        (void)data;
 #endif
     }
 

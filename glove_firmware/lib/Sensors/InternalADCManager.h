@@ -30,6 +30,13 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include "Filters/KalmanFilter1D.h"
+
+// Arduino-ESP32 core 2.x (espressif32@^6.5.0) names the 12 dB attenuation
+// enum ADC_11db (the legacy name; ADC_ATTEN_DB_12 is the newer IDF alias).
+// Both refer to the same ~0-2.5 V usable range. See 07 spec §3.3.
+#ifndef ADC_ATTEN_DB_12
+#define ADC_ATTEN_DB_12 ADC_11db
+#endif
 #endif
 
 class InternalADCManager : public IFlexSensor {
