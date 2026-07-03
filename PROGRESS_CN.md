@@ -1,6 +1,6 @@
 # PROGRESS_CN.md — 跨会话状态追踪器
 
-**最后更新**: 2026-06-22
+**最后更新**: 2026-07-03
 
 ---
 
@@ -613,3 +613,68 @@ ESP32-S3 通过 USB CDC 连接到 Ubuntu (`/dev/ttyACM0`)。硬件部分接线�
 - Adafruit BNO08x 库: 两个平台均可工作
 - PlatformIO 构建: 两个平台均可工作
 - 串口监视器: `pio device monitor` 两个平台均可工作 (Windows 为 COM6, Ubuntu 为 /dev/ttyACMx)
+
+---
+
+## V6 内部 ADC 迁移 (2026-07-02~03，分支 feature/v6-dual-s3p4-flex-lsm6dsv16x)
+
+**决策**：V6 去 ADS1115×2，改用 ESP32-S3 内部 ADC1 (GPIO1-5) 读 5 弯曲传感器。配合已有的 BNO085→LSM6DSV16X IMU 迁移。
+
+**4 个关键决策（用户 AskUserQuestion 确认）**：
+1. ADC API = `analogReadMilliVolts()` + N=16 软件过采样（~12-13 effective bits, <1ms/frame）
+2. 标定存储 = NVS `Preferences` key-value（修 V5 RAM-only bug）
+3. 抽象层 = 新增 `IFlexSensor` 接口（Strategy/Adapter，可切回 ADS1115）
+4. 分压+衰减 = 保 47kΩ + `ADC_ATTEN_DB_12`（硬件零改动）
+
+### 实现进度 (2026-07-03)
+
+**分支**: `feature/v6-dual-s3p4-flex-lsm6dsv16x`
+**状态**: Tasks 1-5 DONE & committed (NOT pushed)，Tasks 6-7 pending
+**实现计划**: `docs/superpowers/plans/2026-07-03-v6-internal-adc-migration.md` (7 tasks, TDD-first)
+
+#### 已完成 (6 commits)
+
+| Commit | Task | 内容 |
+|---|---|---|
+| `94bcfdb` | T1 | `IFlexSensor.h` 接口 + 10 mock 测试 |
+| `e1c3f5e` | T3 | `InternalADCManager.h` (ADC1 GPIO1-5, N=16 oversample, Kalman, NVS stub) + 16 测试 |
+| `abbff5f` | T2 | `FlexManager.h` 重构为依赖 `IFlexSensor*` + 8 测试 |
+| `7b28858` | T4 | `test_adc_calibration` (4 测试)；修复 `persistCalibration` UNIT_TEST 行为 |
+| `7ed6624` | T5 | `SensorManager.h` 持有 `IFlexSensor*`；`main.cpp` 恢复 V5 FreeRTOS 任务架构 (`SIMULATION=false`)；`platformio.ini` +Preferences +`lib_ldf_mode=deep+`；`ADC_ATTEN_DB_12`→`ADC_11db` 兼容宏 |
+| `1c6f4dc` | — | 清理冗余文件 (log/、graphify-out/、.claude/plans/ 加入 .gitignore)；优化 `__pycache__` 规则；添加 V6 实现计划 |
+
+#### 构建/测试状态
+
+- **硬件构建**: `pio run -e esp32-s3-devkitc-1-n16r8` = ✅ SUCCESS (RAM 13.4%, Flash 22.4%)
+- **Native 测试**: 38/38 pass (4 个 V6 测试套件) ✅
+- **Git 状态**: 6 次 commit，分支**未 push** 到远程
+
+#### 待完成任务
+
+- **Task 6 (可选)**: `ADS1115FlexAdapter.h` V5 兼容适配器 — 用户确认**暂不需要** V5 硬件向后兼容
+- **Task 7**: On-device 验证 V1-V7 (07 §8) — 需要物理 ESP32-S3 + 弯曲传感器，用户稍后 `/new` 后接入硬件
+
+#### 关键兼容性笔记（后续会话参考）
+
+- **`ADC_ATTEN_DB_12` 未声明**: Arduino-ESP32 core 2.x (espressif32@^6.5.0) 使用 legacy `ADC_11db` 枚举名。已通过 `#ifndef ADC_ATTEN_DB_12 #define ADC_ATTEN_DB_12 ADC_11db` 兼容
+- **`Preferences.h` 未找到**: 必须在 `platformio.ini` 添加 `Preferences` 到 `lib_deps` 并且设置 `lib_ldf_mode = deep+`。默认 chain mode 只扫描源文件不扫描头文件
+- **`persistCalibration` 在 UNIT_TEST**: 必须在 `#else` 分支设置 `_has_calib=true`
+
+#### 本次会话设计决策（AskUserQuestion 确认）
+
+1. **IMU 路径**: 仅 ADC 迁移 — BNO085 仍 SKIP，IMU 返回零值。LSM6DSV16X 迁移是独立 V6 任务
+2. **main.cpp**: 恢复 V5 应用 + V6 改造 — 从 commit `4af33a4` 恢复 FreeRTOS 双核任务架构，改为 `SIMULATION=false`
+
+### 文档完成 (2026-07-02)
+
+- ✅ 新建+切换 git 分支
+- ✅ 新建 `docs/V6/07_internal_adc_migration.md`：完整深度 spec
+- ✅ 升级 `docs/V6/` 01-06 + README：消除所有 "ADS1115 unchanged" stale 点
+- ✅ BOM 更新：per-glove ¥55→¥47，per-pair ¥256-286→¥196-226（省 ¥60-80/pair）
+- ✅ `docs/archive/README.md` 重写为版本索引
+
+### 下一步
+
+1. `git push` 完成（用户手动执行后 `/new` 重开会话）
+2. Task 7 (硬件验证) — 需要物理设备
+3. 继续处理未暂存的 glove_relay 修改 (mock_data 等)
