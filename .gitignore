@@ -9,13 +9,7 @@ glove_firmware/.pio/
 .vscode/ipch
 
 # Python
-glove_relay/__pycache__/
-glove_relay/src/__pycache__/
-glove_relay/src/models/__pycache__/
-glove_relay/src/nlp/__pycache__/
-glove_relay/src/tts/__pycache__/
-glove_relay/src/utils/__pycache__/
-glove_relay/tests/__pycache__/
+__pycache__/
 *.pyc
 *.pyo
 .env
@@ -84,6 +78,15 @@ sdkconfig.old
 2026-*-this-session-*.txt
 2026-*-command-message*.txt
 temp_search.txt
+
+# Claude Code local session log directory (ephemeral transcripts)
+log/
+
+# Graphify working output (semantic-extraction cache; rebuildable)
+graphify-out/
+
+# Claude Code in-session plan scratch (kept locally only)
+.claude/plans/
 
 # Binary archives (don't store in git)
 *.zip
