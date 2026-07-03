@@ -141,6 +141,9 @@ public:
         _prefs.end();
         _has_calib = true;
         Serial.println("[InternalADC] calibration persisted to NVS");
+#else
+        // Native simulation: mark as persisted (no real NVS)
+        _has_calib = true;
 #endif
         return true;
     }
