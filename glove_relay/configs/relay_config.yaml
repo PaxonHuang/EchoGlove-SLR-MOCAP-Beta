@@ -55,3 +55,10 @@ tts:
   rate: "+0%"
   volume: "+0%"
   cache_dir: "data/tts_cache"
+
+# --- Mock data source (hardware bypass for development) ---
+mock:
+  enabled: true          # set to false to use real UDP/USB hardware
+  fps: 30                # messages per second
+  gesture_cycle_seconds: 3.0
+  noise_std: 0.02

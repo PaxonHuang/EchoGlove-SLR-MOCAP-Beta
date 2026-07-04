@@ -89,6 +89,14 @@ class _TTSConfig:
 
 
 @dataclass
+class _MockConfig:
+    enabled: bool = False
+    fps: float = 30.0
+    gesture_cycle_seconds: float = 3.0
+    noise_std: float = 0.02
+
+
+@dataclass
 class RelayConfig:
     """Top-level configuration container with typed sub-sections."""
 
@@ -99,6 +107,7 @@ class RelayConfig:
     logging: _LoggingConfig = field(default_factory=_LoggingConfig)
     nlp: _NLPConfig = field(default_factory=_NLPConfig)
     tts: _TTSConfig = field(default_factory=_TTSConfig)
+    mock: _MockConfig = field(default_factory=_MockConfig)
 
     # Raw model config (loaded separately)
     model_config: dict | None = None
@@ -166,6 +175,12 @@ def _build_config(relay_path: Path = _DEFAULT_RELAY_CFG) -> RelayConfig:
         for k, v in raw["tts"].items():
             if hasattr(cfg.tts, k):
                 setattr(cfg.tts, k, v)
+
+    # Mock data source
+    if "mock" in raw:
+        for k, v in raw["mock"].items():
+            if hasattr(cfg.mock, k):
+                setattr(cfg.mock, k, v)
 
     return cfg
 

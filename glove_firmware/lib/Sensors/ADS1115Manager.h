@@ -8,7 +8,7 @@
  *   ADS1115_ADDR_GND (0x48): AIN0=Thumb, AIN1=Index, AIN2=Middle
  *   ADS1115_ADDR_VDD (0x49): AIN0=Ring,  AIN1=Pinky
  *
- * I2C: SDA=GPIO8, SCL=GPIO9, 100kHz (flat bus, no MUX)
+ * I2C: SDA=GPIO8, SCL=GPIO9, 400kHz (flat bus, no MUX)
  * =============================================================================
  */
 

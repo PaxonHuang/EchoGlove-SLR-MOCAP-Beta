@@ -18,8 +18,8 @@
 
 #include <cstdint>
 #include <cstring>
-#if defined(UNIT_TEST)
-// Stubs for native test builds
+#if defined(UNIT_TEST) && !defined(ECHO_HARDWARE_TEST)
+// Stubs for native test builds (host machine, no hardware)
 #ifndef PROGMEM
 #define PROGMEM
 #endif
@@ -37,6 +37,10 @@ struct _SerialStub {
     }
 };
 static _SerialStub Serial;
+#elif defined(ECHO_HARDWARE_TEST)
+// Hardware test build — Arduino framework provides Serial, Wire, etc.
+#include <Arduino.h>
+#define ps_malloc malloc
 #elif defined(ESP_PLATFORM)
 // ESP-IDF build (P4, C6) — no Arduino
 #include <type_traits>
@@ -83,7 +87,7 @@ enum DeviceStatus : uint8_t {
 namespace I2CPins {
     static constexpr uint8_t SDA = 8;
     static constexpr uint8_t SCL = 9;
-    static constexpr uint32_t FREQ = 100000;  // 100kHz for 3 devices
+    static constexpr uint32_t FREQ = 400000;  // 400kHz for 3 devices
 }
 
 // ── SensorData ──────────────────────────────────────────────────

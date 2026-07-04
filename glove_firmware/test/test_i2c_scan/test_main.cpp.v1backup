@@ -1,0 +1,192 @@
+/**
+ * I2C Bus Recovery + Multi-pin Scan Diagnostic
+ *
+ * Phase 1: Bus recovery — send 9 SCL clock pulses to release stuck SDA
+ * Phase 2: After recovery, do proper Wire.h I2C scan on the configured pins (GPIO8/9)
+ * Phase 3: Direct GPIO8/9 pin read + bit-bang I2C scan as fallback
+ * Phase 4: BNO085 init test
+ */
+#include <Arduino.h>
+#include <Wire.h>
+
+// Try both GPIO pairs (in case wiring differs)
+static const uint8_t PIN_PAIRS[][2] = {
+    {8, 9},       // Primary (CLAUDE.md / SOP spec)
+    {4, 5},       // Alt per old data_structures.h
+};
+static const size_t NUM_PAIRS = sizeof(PIN_PAIRS) / sizeof(PIN_PAIRS[0]);
+
+#define I2C_FREQ 100000
+
+void bus_recovery(int sda, int scl) {
+    Serial.printf("\n=== Phase 1.%d.%d: I2C Bus Recovery (SDA=%d, SCL=%d) ===\n", sda, scl, sda, scl);
+
+    pinMode(sda, INPUT);
+    pinMode(scl, INPUT);
+    delay(10);
+    bool sda_stuck = (digitalRead(sda) == LOW);
+    bool scl_stuck = (digitalRead(scl) == LOW);
+    Serial.printf("  Before recovery: SDA=%d, SCL=%d\n", digitalRead(sda), digitalRead(scl));
+
+    if (!sda_stuck && !scl_stuck) {
+        Serial.println("  Bus not stuck (SDA/SCL both HIGH) — recovery not needed.");
+        return;
+    }
+
+    Serial.println("  Bus stuck! Performing 9-clock recovery...");
+
+    pinMode(scl, OUTPUT);
+    for (int i = 0; i < 9; i++) {
+        digitalWrite(scl, HIGH);
+        delayMicroseconds(5);
+        pinMode(sda, INPUT);
+        if (digitalRead(sda) == HIGH) {
+            Serial.printf("  SDA released after %d clock pulses!\n", i + 1);
+            break;
+        }
+        digitalWrite(scl, LOW);
+        delayMicroseconds(5);
+    }
+
+    pinMode(sda, OUTPUT);
+    digitalWrite(sda, LOW);
+    delayMicroseconds(5);
+    digitalWrite(scl, HIGH);
+    delayMicroseconds(5);
+    digitalWrite(sda, HIGH);
+    delayMicroseconds(5);
+
+    pinMode(sda, INPUT);
+    pinMode(scl, INPUT);
+    delay(10);
+    Serial.printf("  After recovery: SDA=%d, SCL=%d\n", digitalRead(sda), digitalRead(scl));
+
+    if (digitalRead(sda) == HIGH && digitalRead(scl) == HIGH) {
+        Serial.println("  Bus recovery SUCCESS — SDA and SCL both HIGH");
+    } else {
+        Serial.println("  Bus recovery FAILED — SDA still LOW. Hardware issue?");
+    }
+}
+
+void i2c_scan(int sda, int scl, const char* label) {
+    Serial.printf("\n=== Phase 2: I2C Scan on %s (SDA=%d, SCL=%d) ===\n", label, sda, scl);
+
+    Wire.begin(sda, scl, I2C_FREQ);
+    Wire.setTimeOut(50);
+
+    Serial.printf("  Scanning at %d Hz...\n", I2C_FREQ);
+
+    uint8_t found = 0;
+    int err_counts[8] = {0};  // bucket by error code
+    for (uint8_t addr = 0x03; addr <= 0x77; addr++) {
+        Wire.beginTransmission(addr);
+        uint8_t err = Wire.endTransmission();
+        if (err < 8) err_counts[err]++;
+
+        if (err == 0) {
+            Serial.printf("  [0x%02X] FOUND!", addr);
+            if (addr == 0x48) Serial.print(" ADS1115 #1");
+            if (addr == 0x49) Serial.print(" ADS1115 #2");
+            if (addr == 0x4B) Serial.print(" BNO085");
+            Serial.println();
+            found++;
+        }
+    }
+
+    Serial.printf("  Total: %d devices found\n", found);
+    Serial.printf("  Error histogram: err0=%d err1=%d err2=%d err3=%d err4=%d err5=%d err6=%d err7=%d\n",
+                  err_counts[0], err_counts[1], err_counts[2], err_counts[3],
+                  err_counts[4], err_counts[5], err_counts[6], err_counts[7]);
+
+    if (found == 3) {
+        Serial.println("  ** ALL 3 DEVICES DETECTED **");
+    } else if (found == 0) {
+        Serial.println("  ** NO DEVICES — check wiring/power **");
+    }
+}
+
+void bno085_test() {
+    Serial.println("\n=== Phase 3: BNO085 Quick Test ===");
+
+    Wire.begin(8, 9, I2C_FREQ);
+    Wire.setTimeOut(50);
+
+    // Try multiple addresses: 0x4A and 0x4B
+    for (uint8_t addr = 0x4A; addr <= 0x4B; addr++) {
+        Serial.printf("  Probing 0x%02X ...\n", addr);
+        Wire.beginTransmission(addr);
+        uint8_t err = Wire.endTransmission();
+        Serial.printf("  endTransmission err=%d\n", err);
+    }
+
+    // Read ADS1115 #1 config
+    Serial.println("  Reading ADS1115 #1 (0x48) config register...");
+    Wire.beginTransmission(0x48);
+    Wire.write(0x01);
+    uint8_t err = Wire.endTransmission(false);
+    if (err == 0) {
+        uint8_t bytes = Wire.requestFrom(0x48, 2);
+        if (bytes >= 2) {
+            uint16_t cfg = (Wire.read() << 8) | Wire.read();
+            Serial.printf("  ADS1115 #1 config: 0x%04X\n", cfg);
+        }
+    } else {
+        Serial.printf("  ADS1115 #1 pointer write FAIL: err=%d\n", err);
+    }
+
+    Serial.println("  Reading ADS1115 #2 (0x49) config register...");
+    Wire.beginTransmission(0x49);
+    Wire.write(0x01);
+    err = Wire.endTransmission(false);
+    if (err == 0) {
+        uint8_t bytes = Wire.requestFrom(0x49, 2);
+        if (bytes >= 2) {
+            uint16_t cfg = (Wire.read() << 8) | Wire.read();
+            Serial.printf("  ADS1115 #2 config: 0x%04X\n", cfg);
+        }
+    } else {
+        Serial.printf("  ADS1115 #2 pointer write FAIL: err=%d\n", err);
+    }
+}
+
+void setup() {
+    Serial.begin(115200);
+    while (!Serial) delay(10);
+    delay(2000);
+
+    Serial.println("========================================");
+    Serial.println("  EchoGlove V5 — I2C Diagnostic");
+    Serial.println("========================================");
+
+    // Print chip info
+    Serial.printf("  Chip: %s Rev %d\n", ESP.getChipModel(), ESP.getChipRevision());
+    Serial.printf("  Flash: %u MB\n", ESP.getFlashChipSize() / (1024 * 1024));
+    Serial.printf("  PSRAM:  %u bytes (%u MB)\n",
+                  ESP.getPsramSize(), ESP.getPsramSize() / (1024 * 1024));
+    if (ESP.getPsramSize() == 0) {
+        Serial.println("  ** WARNING: PSRAM reports 0 bytes — memory_type mismatch? **");
+    }
+
+    // Run bus recovery + scan on each pin pair
+    for (size_t i = 0; i < NUM_PAIRS; i++) {
+        int sda = PIN_PAIRS[i][0];
+        int scl = PIN_PAIRS[i][1];
+        char label[16];
+        snprintf(label, sizeof(label), "GPIO%d/%d", sda, scl);
+
+        bus_recovery(sda, scl);
+        i2c_scan(sda, scl, label);
+        Wire.end();
+        delay(100);
+    }
+
+    bno085_test();
+
+    Serial.println("\n========================================");
+    Serial.println("  Done.");
+    Serial.println("========================================");
+}
+
+void loop() {
+    delay(10000);
+}

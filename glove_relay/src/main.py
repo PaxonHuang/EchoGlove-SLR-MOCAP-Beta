@@ -21,7 +21,7 @@ Usage
 import asyncio
 import time
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -46,6 +46,7 @@ logger = get_logger(__name__)
 ws_manager = ConnectionManager()
 udp_server: UDPServer | None = None
 usb_cdc_server: USBCDCServer | None = None
+mock_data_source: Any | None = None
 model_registry: ModelRegistry | None = None
 grammar_corrector: GrammarCorrector | None = None
 tts_engine: TTSEngine | None = None
@@ -121,13 +122,16 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Relay server starting …")
 
     # --- Model registry --------------------------------------------------
-    model_registry = ModelRegistry()
-    model_registry.load_from_config()
-    logger.info(
-        "Models loaded — L1: %s | L2: %s",
-        model_registry.active_l1_name,
-        model_registry.active_l2_name,
-    )
+    if not config.mock.enabled:
+        model_registry = ModelRegistry()
+        model_registry.load_from_config()
+        logger.info(
+            "Models loaded — L1: %s | L2: %s",
+            model_registry.active_l1_name,
+            model_registry.active_l2_name,
+        )
+    else:
+        logger.warning("Mock mode: skipping model registry initialisation")
 
     # --- NLP grammar corrector -------------------------------------------
     if config.nlp.enabled:
@@ -165,6 +169,23 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     usb_task = asyncio.create_task(usb_cdc_server.start(), name="usb-cdc")
     logger.info("USB CDC server started on %s @ %d", usb_port, usb_baud)
 
+    # --- Mock data source (software-only bypass) ---------------------------
+    global mock_data_source  # noqa: PLW0603
+    mock_task: asyncio.Task[Any] | None = None
+    if config.mock.enabled:
+        from src.mock_data import MockDataSource
+
+        mock_data_source = MockDataSource(
+            fps=config.mock.fps,
+            gesture_cycle_seconds=config.mock.gesture_cycle_seconds,
+            noise_std=config.mock.noise_std,
+        )
+        mock_task = mock_data_source.start(ws_manager.broadcast)
+        logger.warning(
+            "MOCK MODE ENABLED — real glove hardware is bypassed (mock.fps=%.1f)",
+            config.mock.fps,
+        )
+
     yield  # application is now running
 
     # --- Shutdown --------------------------------------------------------
@@ -183,6 +204,9 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
         await usb_task
     except asyncio.CancelledError:
         pass
+
+    if mock_data_source is not None:
+        await mock_data_source.stop()
 
     if model_registry is not None:
         model_registry.cleanup()
