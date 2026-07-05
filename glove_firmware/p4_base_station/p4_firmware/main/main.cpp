@@ -5,6 +5,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "uart_receiver.h"
 #include "data_structures.h"
 #include "FramePairer.h"
@@ -108,6 +109,9 @@ static void inference_task(void* arg) {
 static void uart_task(void* arg) {
     GlovePacket pkt;
     while (1) {
+        // Expire stale half-pairs past the 50ms timeout
+        s_pairer.tick((uint32_t)esp_timer_get_time());
+
         if (uart_receiver_poll(&pkt)) {
             s_pairer.feed(pkt);
             FramePair pair;

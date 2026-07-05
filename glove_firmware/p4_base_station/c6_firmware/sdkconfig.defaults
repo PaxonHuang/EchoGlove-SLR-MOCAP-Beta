@@ -3,3 +3,6 @@ CONFIG_ESP_WIFI_ENABLED=y
 CONFIG_ESP_NOW_ENABLED=y
 CONFIG_BT_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLED=y
+
+# Mock ESP-NOW mode (set =y to generate synthetic packets without gloves)
+CONFIG_MOCK_ESP_NOW=y

@@ -87,7 +87,12 @@ extern "C" void app_main(void) {
     s_uart_queue = xQueueCreate(UART_FRAME_MAX_SIZE * 4, sizeof(uint8_t));
 
     // Init ESP-NOW receiver with packet callback
+    // (mock mode generates synthetic packets for hardware testing)
+#ifdef CONFIG_MOCK_ESP_NOW
+    espnow_handler_init_mock(on_glove_packet);
+#else
     espnow_handler_init(on_glove_packet);
+#endif
 
     // Start UART TX task on core 0
     xTaskCreate(uart_tx_task, "uart_tx", 4096, nullptr, 3, nullptr);

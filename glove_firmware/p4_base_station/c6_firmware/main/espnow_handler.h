@@ -23,6 +23,14 @@ typedef void (*espnow_packet_cb_t)(const GlovePacket* pkt);
 // Initialize ESP-NOW with receive callback
 bool espnow_handler_init(espnow_packet_cb_t cb);
 
+/**
+ * Initialize mock ESP-NOW mode. Generates synthetic GlovePackets cycling
+ * through 5 gestures at 50Hz and forwards them to the callback.
+ * Used for hardware-in-the-loop testing without real gloves.
+ * Compile-time controlled by CONFIG_MOCK_ESP_NOW=y.
+ */
+extern "C" bool espnow_handler_init_mock(espnow_packet_cb_t cb);
+
 // Get number of packets received
 uint32_t espnow_handler_rx_count(void);
 
