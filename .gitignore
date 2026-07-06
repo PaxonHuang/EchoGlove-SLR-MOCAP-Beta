@@ -69,6 +69,11 @@ glove_relay/models/*.tflite
 # ESP-IDF build artifacts
 **/build/
 sdkconfig.old
+# sdkconfig is auto-generated from sdkconfig.defaults + menuconfig; track only .defaults
+**/sdkconfig
+# managed_components are auto-fetched from idf_component.yml + dependencies.lock
+# (like node_modules — do NOT commit). dependencies.lock IS committed for reproducibility.
+**/managed_components/
 
 # Diagnostic temp files
 *.diag_*

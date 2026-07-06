@@ -1,0 +1,5 @@
+dependencies:
+  espressif/esp_tinyusb:
+    version: "^1.0.0"
+  espressif/esp32_p4_function_ev_board:
+    version: "*"
