@@ -61,33 +61,42 @@ Tier2Result tflite_run(const float left[TFLITE_INPUT_DIM],
                        const float right[TFLITE_INPUT_DIM]) {
     Tier2Result result;
     memset(&result, 0, sizeof(result));
-    result.gesture_id = -1;
-    result.valid = false;
 
     if (!s_initialized) {
         ESP_LOGW(TAG, "tflite_run called before tflite_init");
+        result.gesture_id = -1;
+        result.valid = false;
         return result;
     }
 
     int64_t t0 = esp_timer_get_time();
 
-    // TODO: Full inference pipeline
+#if __has_include("model_data.h")
+    // ---- Real inference path (model_data.h exists) ----
+    // TODO: full TFLite Micro interpreter pipeline
     //   1. Copy left[11] → input tensor 0
-    //      float* in_left = s_interpreter->input(0)->data.f;
-    //      memcpy(in_left, left, TFLITE_INPUT_DIM * sizeof(float));
     //   2. Copy right[11] → input tensor 1
-    //      float* in_right = s_interpreter->input(1)->data.f;
-    //      memcpy(in_right, right, TFLITE_INPUT_DIM * sizeof(float));
     //   3. Invoke
-    //      TfLiteStatus status = s_interpreter->Invoke();
-    //   4. Parse output tensor → softmax → argmax
-    //      const float* out = s_interpreter->output(0)->data.f;
-    //      ... compute softmax probabilities ...
-    //      ... find argmax ...
+    //   4. Parse output → softmax → argmax
+    // For now, fall through to stub behavior until interpreter is wired.
+#endif
+
+    // ---- Stub: cycle through 5 gestures with 0.80 confidence ----
+    // Enables LVGL display + USB CDC demo before model_data.h exists.
+    static int s_call_count = 0;
+    const int STUB_GESTURES[5] = {0, 1, 2, 3, 4};  // 你好, 谢谢, 对不起, 是, 不是
+
+    result.gesture_id = STUB_GESTURES[s_call_count % 5];
+    result.confidence = 0.80f;
+    result.valid = true;
+
+    s_call_count++;
 
     int64_t t1 = esp_timer_get_time();
     result.inference_us = (uint32_t)(t1 - t0);
-    result.valid = true;
+
+    ESP_LOGD(TAG, "STUB inference: gesture=%d conf=%.2f call=%d",
+             result.gesture_id, result.confidence, s_call_count);
 
     return result;
 }
