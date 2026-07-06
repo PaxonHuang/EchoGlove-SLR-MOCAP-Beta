@@ -2,11 +2,11 @@
  * @file display_task.cpp
  * @brief LVGL display UI for the P4 base station.
  *
- * Current implementation logs gesture results and system status via
- * ESP_LOGI.  Full LVGL widget creation will be enabled once the BSP
- * (esp-bsp for the P4 EV Board) is integrated.
+ * Uses the esp-bsp `esp32_p4_function_ev_board` BSP to drive the 7" MIPI-DSI
+ * panel. LVGL is now unconditionally available (linked via the BSP component);
+ * the historical `__has_include("lvgl.h")` guard has been removed.
  *
- * Layout (planned):
+ * Layout (1024x600 landscape):
  *   ┌─────────────────────────────────────┐
  *   │  LEFT GESTURE        RIGHT GESTURE  │
  *   │  [████████░░] 85%   [██████░░░░] 60%│
@@ -25,13 +25,9 @@
 #include "esp_log.h"
 #include <cstring>
 
-/* ── LVGL include (guarded until BSP is linked) ────────────────── */
-#if __has_include("lvgl.h")
+#include "bsp/esp-bsp.h"
+#include "bsp/display.h"
 #include "lvgl.h"
-#define HAS_LVGL 1
-#else
-#define HAS_LVGL 0
-#endif
 
 static const char* TAG = "display";
 
@@ -55,12 +51,7 @@ static const char* GESTURE_NAMES[46] = {
     /* 45 */ "想"
 };
 
-static const char* FINGER_NAMES[5] = {
-    "Thumb", "Index", "Middle", "Ring", "Pinky"
-};
-
 /* ── LVGL widget handles (populated in display_init) ───────────── */
-#if HAS_LVGL
 static lv_obj_t* s_lbl_left_gesture  = NULL;
 static lv_obj_t* s_lbl_right_gesture = NULL;
 static lv_obj_t* s_bar_left_conf     = NULL;
@@ -69,7 +60,6 @@ static lv_obj_t* s_lbl_status        = NULL;
 static lv_obj_t* s_lbl_log           = NULL;
 static lv_obj_t* s_flex_bars_left[5]  = {};
 static lv_obj_t* s_flex_bars_right[5] = {};
-#endif
 
 /* ── Helper: map confidence to 0-100 bar value ─────────────────── */
 static inline int32_t conf_to_bar(float conf) {
@@ -82,19 +72,18 @@ static inline int32_t conf_to_bar(float conf) {
 /* ================================================================= */
 
 bool display_init(void) {
-    ESP_LOGI(TAG, "Display init (LVGL)");
+    ESP_LOGI(TAG, "Display init (LVGL + BSP)");
 
-#if HAS_LVGL
-    /* -------------------------------------------------------------- */
-    /*  Full LVGL BSP init should happen here via esp-bsp:
-     *      bsp_display_start();
-     *      bsp_display_lock();
-     *      // create widgets ...
-     *      bsp_display_unlock();
-     *
-     *  The widget skeleton below shows the intended layout.            */
-    /* -------------------------------------------------------------- */
+    /* Initialize BSP display: MIPI-DSI + display controller + LVGL task. */
+    lv_display_t* disp = bsp_display_start();
+    if (!disp) {
+        ESP_LOGE(TAG, "BSP display_start failed");
+        return false;
+    }
+    bsp_display_backlight_on();
 
+    /* LVGL widgets must be created under the BSP display lock. */
+    bsp_display_lock(0);
     lv_obj_t* scr = lv_scr_act();
 
     /* -- Left gesture label -- */
@@ -149,11 +138,9 @@ bool display_init(void) {
     lv_label_set_text(s_lbl_log, "Log: idle");
     lv_obj_set_pos(s_lbl_log, 10, 185);
 
-    ESP_LOGI(TAG, "LVGL widgets created");
-#else
-    ESP_LOGW(TAG, "lvgl.h not found -- display widgets skipped (log-only mode)");
-#endif
+    bsp_display_unlock();
 
+    ESP_LOGI(TAG, "LVGL widgets created on 7\" MIPI-DSI");
     return true;
 }
 
@@ -185,8 +172,9 @@ void display_update(const Tier2Result* result,
                  status->active_tier, status->cpu_usage, status->mem_usage);
     }
 
-    /* ---- Update LVGL widgets if available ---- */
-#if HAS_LVGL
+    /* ---- Update LVGL widgets under the BSP display lock ---- */
+    bsp_display_lock(0);
+
     if (result && result->valid) {
         const char* name = (result->gesture_id >= 0 && result->gesture_id < 46)
                            ? GESTURE_NAMES[result->gesture_id]
@@ -227,5 +215,6 @@ void display_update(const Tier2Result* result,
         snprintf(buf, sizeof(buf), "%s %.0f%%", name, result->confidence * 100.0f);
         lv_label_set_text(s_lbl_log, buf);
     }
-#endif /* HAS_LVGL */
+
+    bsp_display_unlock();
 }
