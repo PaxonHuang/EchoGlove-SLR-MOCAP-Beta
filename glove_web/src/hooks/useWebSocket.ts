@@ -25,7 +25,9 @@ export function useWebSocket(): UseWebSocketReturn {
   const updateGesture = useGestureStore((s) => s.updateGesture);
 
   const getWsUrl = useCallback((): string => {
-    return `ws://${relayHost}:${DEFAULT_WS_PORT}`;
+    // Relay's WS endpoint is mounted at /ws (glove_relay main.py @app.websocket("/ws")).
+    // Connecting to the bare root (ws://host:port/) returns HTTP 403 — no route there.
+    return `ws://${relayHost}:${DEFAULT_WS_PORT}/ws`;
   }, [relayHost]);
 
   const cleanup = useCallback(() => {
