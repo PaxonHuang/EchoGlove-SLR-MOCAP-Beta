@@ -17,3 +17,8 @@ CONFIG_LV_COLOR_DEPTH_16=y
 
 # SD card (FAT filesystem for /sdcard/tts/*.pcm)
 CONFIG_FATFS_LONG_FILENAME=y
+
+# P4 internal mock data source (bypass UART/C6 for standalone verification).
+# Set =n (or override in sdkconfig) for production builds receiving real
+# data from the C6 over UART.
+CONFIG_P4_INTERNAL_MOCK=y

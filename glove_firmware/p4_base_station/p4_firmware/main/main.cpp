@@ -10,6 +10,11 @@
 #include "data_structures.h"
 #include "FramePairer.h"
 
+// Internal mock data source (bypasses UART/C6 for standalone P4 verification)
+#ifdef CONFIG_P4_INTERNAL_MOCK
+#include "mock_data_source.h"
+#endif
+
 // TFLite Micro inference (stub until model_data.h is generated)
 #if __has_include("model_data.h")
 #include "model_data.h"
@@ -112,7 +117,12 @@ static void uart_task(void* arg) {
         // Expire stale half-pairs past the 50ms timeout
         s_pairer.tick((uint32_t)esp_timer_get_time());
 
-        if (uart_receiver_poll(&pkt)) {
+#ifdef CONFIG_P4_INTERNAL_MOCK
+        bool got = mock_data_source_poll(&pkt);
+#else
+        bool got = uart_receiver_poll(&pkt);
+#endif
+        if (got) {
             s_pairer.feed(pkt);
             FramePair pair;
             if (s_pairer.getPair(pair)) {
@@ -177,8 +187,14 @@ extern "C" void app_main(void) {
     s_last_status.p4_ready = true;
     s_last_status.active_tier = 2;
 
-    // Start UART receiver on core 0, inference on core 1
+#ifdef CONFIG_P4_INTERNAL_MOCK
+    // Standalone mode: generate synthetic data, no UART/C6 needed
+    mock_data_source_init();
+    ESP_LOGW(TAG, "P4 INTERNAL MOCK — no UART receiver, synthetic data only");
+#else
+    // Production mode: receive real data from C6 over UART
     uart_receiver_init(0, 37, 38, 2000000);
+#endif
     xTaskCreatePinnedToCore(uart_task, "uart_rx", 8192, NULL, 3, NULL, 0);
     xTaskCreatePinnedToCore(inference_task, "inference", 8192, NULL, 2, NULL, 1);
 
@@ -192,7 +208,12 @@ extern "C" void app_main(void) {
             s_has_new_result = false;
         }
 
-        ESP_LOGI(TAG, "UART RX count: %lu", (unsigned long)uart_receiver_count());
+        ESP_LOGI(TAG, "RX count: %lu",
+#ifdef CONFIG_P4_INTERNAL_MOCK
+                 (unsigned long)mock_data_source_count());
+#else
+                 (unsigned long)uart_receiver_count());
+#endif
         vTaskDelay(pdMS_TO_TICKS(5000));
     }
 }
