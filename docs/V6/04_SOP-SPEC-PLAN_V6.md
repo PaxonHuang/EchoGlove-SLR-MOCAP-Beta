@@ -1,11 +1,13 @@
 # EchoGlove V6.0 — LSM6DSV16X Migration Design Specification
 
 > **Version**: V6.0
-> **Date**: 2026-06-23
+> **Date**: 2026-06-23 (updated 2026-07-09)
 > **Status**: Draft — Pending user review
 > **Supersedes**: V5.0 DualGloveFlex + V5.2 P4 Base Station
-> **Branch**: V6-LSM6DSV16X (to be created from V5-DualGloveFlex)
+> **Branch**: `feature/v6-dual-s3p4-flex-lsm6dsv16x` (active)
 > **Reason for migration**: BNO085 cost ($15-25) and supply chain risk → LSM6DSV16X ($2-4) with embedded SFLP fusion, same 6-axis output, drop-in SensorData compatibility.
+
+> **⚠️ Communication Update (2026-07-09, V5.3 wired dev path)**: The on-board C6 is an ESP-Hosted Wi-Fi/BT co-processor (SDIO bus, pre-flashed slave firmware) and does **not** support ESP-NOW pass-through. During development, S3 gloves connect **directly** to the P4 over UART (2 Mbps, CRC-16/MODBUS framing via `shared/uart_frame.h`), bypassing C6. C6 is deferred to a future Wi-Fi integration phase (production: C6 serves as Wi-Fi co-processor via ESP-Hosted, not as an ESP-NOW relay). The §4 diagrams still show the original C6→P4 ESP-NOW relay for reference; treat "ESP-NOW → C6 → UART → P4" as replaced by "S3 → UART → P4 (direct, wired)". See `docs/superpowers/specs/2026-07-08-s3-p4-wired-uart-design.md`.
 
 ---
 

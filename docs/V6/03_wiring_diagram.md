@@ -147,9 +147,55 @@ V6 removed the two ADS1115 ADCs. Flex sensors connect directly to ESP32-S3 ADC1 
 
 ---
 
-## 5. C6 <-> P4 UART Wiring
+## 5. S3 ↔ P4 Direct UART Wiring (V5.3 Wired Dev Path — Active)
 
-The ESP32-C6 co-processor relays ESP-NOW glove data to the ESP32-P4 main processor via 2 Mbps UART with CRC-16/MODBUS framing.
+> **Status (2026-07-09)**: **Active development path.** The on-board C6 is an ESP-Hosted Wi-Fi/BT co-processor (pre-flashed slave firmware, SDIO bus) and does **not** support ESP-NOW pass-through. During development, S3 gloves connect **directly** to the P4 over UART, bypassing C6. C6 is deferred to a future Wi-Fi integration phase. See `docs/superpowers/specs/2026-07-08-s3-p4-wired-uart-design.md`.
+
+The ESP32-S3 glove transmits GlovePacket data directly to the ESP32-P4 base station over UART at 2 Mbps, reusing the same CRC-16/MODBUS framing as the (deferred) C6→P4 path. This is a **unidirectional** link (S3 TX → P4 RX) — no back-channel is needed since the P4 only consumes telemetry.
+
+```
+  ESP32-S3-DevKitC-1 N16R8            ESP32-P4 EV Board
+  ┌──────────────────┐                ┌──────────────────┐
+  │                  │                │                  │
+  │  GPIO6  (TX)     ├────────────────┤ GPIO38 (RX)      │
+  │                  │    2 Mbps 8N1  │                  │
+  │  GND             ├────────────────┤ GND              │
+  │                  │                │                  │
+  └──────────────────┘                └──────────────────┘
+   (per glove, one TX line)            (UART0 RX, already configured)
+```
+
+| Signal | S3 GPIO | P4 GPIO | Direction | Baud Rate | Config |
+|--------|---------|---------|-----------|-----------|--------|
+| TX     | GPIO6   | GPIO38  | S3 → P4   | 2,000,000 | 8N1   |
+| GND    | GND     | GND     | —         | —         | Common ground required |
+
+**S3 GPIO6 selection rationale** (audited 2026-07-09):
+- GPIO6 is FREE on the S3 DevKit (not strapping, not flash, not USB, not PSRAM, not ADC1).
+- ADC1 uses GPIO1–5 (flex); I²C uses GPIO8–9; flash uses GPIO11–17; USB CDC uses GPIO19–20; OPI PSRAM uses GPIO26–32.
+- GPIO6/7 are the cleanest free pair for UART1 (TX=6, optional RX=7).
+
+**Dual-hand wiring (no bus contention)**:
+Each glove gets its own dedicated TX line into a separate P4 UART — physical isolation eliminates any bus contention:
+
+```
+  S3 (Left)  GPIO6 (TX) ──► P4 GPIO38 (UART0 RX)
+  S3 (Right) GPIO6 (TX) ──► P4 GPIO?? (UART2 RX, TBD)
+```
+
+**Notes**:
+- Common ground is mandatory for UART at 2 Mbps.
+- No external pull-ups needed for UART lines (TX-only, P4 RX has internal config).
+- 73-byte frame = 2 magic + 69 payload + 2 CRC (same `uart_frame.h` protocol as C6 path).
+- S3 sends ESP-NOW **and** UART in parallel (compile flag `WIRED_UART=1`); UART is the wired fallback.
+
+---
+
+## 6. C6 ↔ P4 UART Wiring (Deferred — Production Wi-Fi Path)
+
+> **Status (2026-07-09)**: **Deferred.** Kept for reference; the on-board C6 cannot run our mock-ESP-NOW firmware (ESP-Hosted doesn't support ESP-NOW). In production, C6 will serve as a Wi-Fi co-processor via ESP-Hosted, not as a UART relay. See [[p4-ev-board-c6-esp-hosted]].
+
+The (future production) ESP32-C6 co-processor relays Wi-Fi-received glove data to the ESP32-P4 main processor via 2 Mbps UART with CRC-16/MODBUS framing. This section is retained for the eventual Wi-Fi integration phase.
 
 ```
   ESP32-C6-MINI-1                    ESP32-P4
@@ -184,14 +230,14 @@ The ESP32-C6 co-processor relays ESP-NOW glove data to the ESP32-P4 main process
 
 ---
 
-## 6. P4 Base Station Connections
+## 7. P4 Base Station Connections
 
 ```
   ┌─────────────────────────────────────────────────────────────────┐
   │                    ESP32-P4 Base Station                        │
   │                                                                 │
   │   ┌──────────┐    ┌──────────┐    ┌──────────┐                 │
-  │   │ C6 UART  │    │ MIPI-DSI │    │ I2S Audio│                 │
+  │   │ S3 UART  │    │ MIPI-DSI │    │ I2S Audio│                 │
   │   │ GPIO37/38│    │ Display  │    │ ES8311   │                 │
   │   └──────────┘    └──────────┘    └──────────┘                 │
   │                                                                 │
@@ -202,7 +248,7 @@ The ESP32-C6 co-processor relays ESP-NOW glove data to the ESP32-P4 main process
   └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 6.1 MIPI-DSI Display
+### 7.1 MIPI-DSI Display
 
 | Signal       | P4 GPIO / Pin | Notes                          |
 |--------------|---------------|--------------------------------|
@@ -216,7 +262,7 @@ The ESP32-C6 co-processor relays ESP-NOW glove data to the ESP32-P4 main process
 | Reset        | GPIO          | Display reset (active LOW)     |
 | Power        | 3.3V / 1.8V   | Per display module spec        |
 
-### 6.2 I2S Audio (ES8311 Codec)
+### 7.2 I2S Audio (ES8311 Codec)
 
 | Signal   | P4 GPIO       | Direction | Notes                  |
 |----------|---------------|-----------|------------------------|
@@ -227,7 +273,7 @@ The ESP32-C6 co-processor relays ESP-NOW glove data to the ESP32-P4 main process
 | I2C SDA  | I2C_SDA       | P4 --> Codec | Codec config (I2C)  |
 | I2C SCL  | I2C_SCL       | P4 --> Codec | Codec config (I2C)  |
 
-### 6.3 USB High-Speed OTG
+### 7.3 USB High-Speed OTG
 
 | Signal   | P4 Pin   | Connect To    | Notes                    |
 |----------|----------|---------------|--------------------------|
@@ -237,7 +283,7 @@ The ESP32-C6 co-processor relays ESP-NOW glove data to the ESP32-P4 main process
 | USB GND  | GND      | Common ground |                          |
 | USB ID   | GND      | GND           | OTG host mode (tie to GND) |
 
-### 6.4 SD Card Slot
+### 7.4 SD Card Slot
 
 | Signal    | P4 GPIO    | Notes                  |
 |-----------|------------|------------------------|
@@ -252,27 +298,27 @@ The ESP32-C6 co-processor relays ESP-NOW glove data to the ESP32-P4 main process
 
 ---
 
-## 7. Critical Wiring Notes
+## 8. Critical Wiring Notes
 
-### 7.1 Voltage Levels
+### 8.1 Voltage Levels
 
 - **Entire I2C bus is 3.3V.** Never connect 5V to any I2C pin.
 - LSM6DSV16X VDD and VDDIO must both be 3.3V.
 - Flex sensor voltage divider output is 0-3.3V range, within ADC1 usable range with `ADC_ATTEN_DB_12` (V6 removed the ADS1115; see `07`).
 
-### 7.2 I2C Pull-ups
+### 8.2 I2C Pull-ups
 
 - Required: 4.7k ohm pull-up resistors on both SDA (GPIO8) and SCL (GPIO9) to 3.3V.
 - If using a breakout board with built-in pull-ups, verify they are 4.7k ohm and not duplicated (parallel pull-ups reduce effective resistance).
 - Total bus capacitance should stay below 400pF for 400 kHz operation.
 
-### 7.3 LSM6DSV16X CS and SDO/SA0 Behavior
+### 8.3 LSM6DSV16X CS and SDO/SA0 Behavior
 
 - **CS (pin 1) = 3.3V**: Forces I2C mode. If CS is left floating, the chip may enter SPI mode on power-up, causing I2C communication failure.
 - **SDO/SA0 (pin 2) = GND**: Sets I2C address to 0x6A. If connected to 3.3V, address becomes 0x6B.
 - CS and SDO/SA0 are latched at power-up. Changing them after power-on has no effect. Power cycle the module if changing I2C/SPI mode or address.
 
-### 7.4 BNO085 PS0/PS1 (Historical -- No Longer Applies)
+### 8.4 BNO085 PS0/PS1 (Historical -- No Longer Applies)
 
 The V6 design removes BNO085 entirely. The following notes are retained for reference during migration:
 
@@ -280,20 +326,20 @@ The V6 design removes BNO085 entirely. The following notes are retained for refe
 - BNO085 ADO=3.3V set address to 0x4B. ADO=GND would set 0x4A.
 - BNO085 RST had a strong internal pull-up; GPIO10 could not reliably pull it LOW.
 
-### 7.5 Flex Sensor Mounting
+### 8.5 Flex Sensor Mounting
 
 - Flex sensors should be mounted on the glove with the conductive side facing the finger.
 - Solder wires to the flex sensor pads; do not use crimp connectors (unreliable at flex sensor thickness).
 - Keep wire runs from flex sensor to the ESP32-S3 ADC1 GPIO pin as short as possible to reduce noise.
 - Consider 100nF ceramic capacitor at each ADC1 analog input (GPIO1-5) for noise filtering.
 
-### 7.6 Common Ground
+### 8.6 Common Ground
 
-- All devices (both gloves, C6, P4) must share a common ground reference.
-- When connecting C6 to P4 via UART, the GND wire is mandatory.
-- ESP-NOW (wireless) does not require a shared ground between gloves.
+- All devices (both gloves, P4) must share a common ground reference.
+- When connecting S3 to P4 via UART (V5.3 wired path), the GND wire is mandatory.
+- ESP-NOW (wireless, when re-enabled via a standalone C6 or ESP-Hosted Wi-Fi) does not require a shared ground between gloves.
 
-### 7.7 Power Budget (Per Glove)
+### 8.7 Power Budget (Per Glove)
 
 | Component     | Typical Current | Max Current | Voltage |
 |---------------|-----------------|-------------|---------|
@@ -308,7 +354,7 @@ Recommend powering from a 3.7V LiPo with 3.3V LDO regulator (e.g., AP2112K-3.3).
 
 ---
 
-## 8. BNO085 --> LSM6DSV16X Migration Pin Mapping
+## 9. BNO085 --> LSM6DSV16X Migration Pin Mapping
 
 This table shows what changed between V5 (BNO085) and V6 (LSM6DSV16X) on the ESP32-S3 glove.
 
@@ -382,6 +428,10 @@ If INT1 is not needed, GPIO10 can be left unconnected and the LSM6DSV16X INT1 pi
   │    Ring   --> GPIO4 (ADC1_CH3)              │
   │    Pinky  --> GPIO5 (ADC1_CH4)              │
   │    (47kΩ pull-down to GND, divider unchanged)│
+  │                                             │
+  │  UART1 TX → P4 (V5.3 wired dev path):       │
+  │    GPIO6 (TX) --> P4 GPIO38 (RX), 2Mbps     │
+  │    GND ---------> P4 GND                    │
   │                                             │
   └─────────────────────────────────────────────┘
 ```

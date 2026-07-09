@@ -774,3 +774,82 @@ Firmware `.proto` established as single source of truth. Relay's `glove_data.pro
 2. Task 7 (硬件验证) — 需要物理设备
 3. 完成后更新 `PROGRESS.md` + `PROGRESS_CN.md`（本次已完成）
 4. 继续处理未暂存的 glove_relay 修改（mock_data 等）
+
+---
+
+## P4 Base Station Hardware Verification (A3) — 2026-07-08
+
+### Hardware Setup
+- **P4**: ESP32-P4-Function-EV-Board v1.5.2, `/dev/ttyACM0` (USB Serial/JTAG)
+- **C6**: On-board ESP32-C6-MINI-1, pre-flashed ESP-Hosted slave firmware v0.0.6
+- **CH340 TTL adapter**: Connected to PROG_C6 header (`/dev/ttyUSB0`), detected as ESP32-C6FH4
+
+### Architecture Discovery (Critical)
+1. **ESP-Hosted does NOT support ESP-NOW**: The on-board C6 is a Wi-Fi/BT co-processor over SDIO, not a general-purpose MCU. The original `c6_firmware` mock-ESP-NOW bridge is **incompatible** with the P4 EV Board's C6.
+2. **C6 flashing**: PROG_C6 header supports UART flashing via ESP-Prog or CH340 TTL adapter. Before flashing, P4 must be put in bootloader mode (hold BOOT + press RST, or `esptool.py -p <host_port> --before default_reset --after no_reset run`).
+3. **OTA**: Only updates ESP-Hosted slave firmware (validated images), NOT arbitrary custom firmware.
+4. **ESP-Serial-Flasher**: Alternative — P4 can flash C6 over direct UART GPIO connection (dedicated UART, not the ESP-Hosted SDIO bus).
+
+### A3 Execution Path Chosen
+- **Option: P4-only standalone verification** (user decision)
+- C6 left as factory ESP-Hosted Wi-Fi/BT co-processor (not flashed)
+- Added `CONFIG_P4_INTERNAL_MOCK=y` Kconfig flag + `mock_data_source` module to P4 firmware
+- Generates synthetic L/R GlovePackets at 50Hz/hand, feeds `FramePairer` directly
+
+### P4 Hardware Verification Results
+| Subsystem | Status | Evidence |
+|-----------|--------|----------|
+| Boot | ✅ PASS | ESP-IDF v5.4, 32MB PSRAM detected, app loads from flash |
+| LVGL Display | ✅ PASS | BSP display_start, 1024×600 MIPI-DSI, LVGL widgets created |
+| FramePairer | ✅ PASS | L/R pairs formed correctly (Pair tick=0..N logs) |
+| TFLite Stub | ✅ PASS | Stub cycling: `Tier2 #N: gesture=4 conf=0.800 time=2 us` |
+| Display Update | ✅ PASS | `Gesture: 你好 (80%)`, `Status: C6=0 P4=1 Tier=2` |
+| ES8311 Audio | ✅ INIT | Codec initialized @ 16kHz/16bit/mono; PCM files absent (no SD card) |
+| USB CDC (TinyUSB) | ✅ INIT | TinyUSB HS CDC enumerated; USB cable to PC needed for JSON output |
+| LCD DSI Underrun | ⚠️ KNOWN | `lcd.dsi.dpi: can't fetch data from external memory fast enough` — P4 EV Board PSRAM bandwidth issue, cosmetic only |
+| SD Card | ❌ N/A | No SD card inserted; `sdmmc_init_ocr: send_op_cond returned 0x107` |
+
+### Commits (this session)
+| SHA | Description |
+|-----|-------------|
+| `4f541bb` | feat(p4): internal mock data source for standalone verification (A3) |
+| `3cf2f3a` | fix(web+relay): WebSocket 403 → use /ws endpoint; add pyserial-asyncio dep |
+
+### Track B (Mock Relay→Browser E2E) — COMPLETED (prior session)
+- WebSocket 403 bug fixed (`/ws` endpoint)
+- `pyserial-asyncio` dep added
+- Verified: relay mock @30fps → WS → React dashboard, 0 JS errors, FPS=32
+
+### Remaining Work
+- **USB CDC JSON output**: Need USB cable from P4 USB HS port → PC to read inference JSON
+- **SD card + TTS**: Insert microSD with `/tts/*.pcm` files for audio verification
+- **C6 Wi-Fi/BT**: Integrate ESP-Hosted into P4 firmware for Wi-Fi connectivity (future phase)
+- **LCD DSI underrun**: Investigate PSRAM bandwidth tuning (low priority)
+
+---
+
+## V5.3 Wired Dev Path — S3→P4 Direct UART (2026-07-09)
+
+### Architecture Pivot Decision
+The on-board C6 is an ESP-Hosted Wi-Fi/BT co-processor (SDIO bus, factory pre-flashed). ESP-Hosted does **NOT support ESP-NOW**. Original `c6_firmware` mock-ESP-NOW bridge incompatible.
+
+**Decision**: S3 → P4 direct UART (bypass C6). C6 deferred to Wi-Fi integration phase.
+- Branch: `feature/v6-dual-s3p4-flex-lsm6dsv16x`
+- Tag: `v5.3-wired-dev` (baseline)
+- GPIO audit: S3 GPIO6 (TX) FREE → P4 GPIO38 (RX). Dual-hand via dual UART (physical isolation, no bus contention).
+- Design: `docs/superpowers/specs/2026-07-08-s3-p4-wired-uart-design.md`
+- Plan: `docs/superpowers/plans/2026-07-09-s3-p4-wired-uart.md`
+
+### Implementation Status
+- [ ] Phase 1: S3 UARTTransmitter.h + native tests (TDD)
+- [ ] Phase 2: S3 main.cpp parallel UART TX (WIRED_UART=1)
+- [ ] Phase 3: P4 sdkconfig CONFIG_P4_INTERNAL_MOCK=n
+- [ ] Phase 4: Hardware wiring + end-to-end verification
+- [ ] Phase 5: Dual-hand (second P4 UART)
+
+### Docs Updated (this session)
+- ✅ CLAUDE.md: added V5.3 section at top
+- ✅ docs/V6/03_wiring_diagram.md: §5 S3↔P4 direct UART (active), §6 C6↔P4 (deferred), renumbered sections
+- ✅ docs/V6/01_architecture_diagrams.md: added architecture update notice
+- ✅ docs/V6/04_SOP-SPEC-PLAN_V6.md: added communication update notice + corrected branch name
+- ✅ Memory: `p4-ev-board-c6-esp-hosted.md`, updated `project-p4-base-station-verification-progress.md`

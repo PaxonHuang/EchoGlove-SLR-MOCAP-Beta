@@ -678,3 +678,84 @@ ESP32-S3 通过 USB CDC 连接到 Ubuntu (`/dev/ttyACM0`)。硬件部分接线�
 1. `git push` 完成（用户手动执行后 `/new` 重开会话）
 2. Task 7 (硬件验证) — 需要物理设备
 3. 继续处理未暂存的 glove_relay 修改 (mock_data 等)
+
+---
+
+### P4 基站硬件验证 (A3) — 2026-07-08
+
+#### 硬件环境
+- **P4**: ESP32-P4-Function-EV-Board v1.5.2, `/dev/ttyACM0` (USB Serial/JTAG)
+- **C6**: 板载 ESP32-C6-MINI-1, 预烧 ESP-Hosted slave 固件 v0.0.6
+- **CH330 TTL 适配器**: 连接 PROG_C6 插针 (`/dev/ttyUSB0`), 识别为 ESP32-C6FH4
+
+#### 架构发现（关键）
+1. **ESP-Hosted 不支持 ESP-NOW**: 板载 C6 是 SDIO 总线上的 Wi-Fi/BT 协处理器，非通用 MCU。原 `c6_firmware` mock-ESP-NOW bridge 与 P4 EV Board 的 C6 **不兼容**。
+2. **C6 烧录**: PROG_C6 插针支持 ESP-Prog 或 CH330 TTL 适配器进行 UART 烧录。烧录前需将 P4 进入 Bootloader 模式（长按 BOOT + 按 RST，或 `esptool.py -p <host_port> --before default_reset --after no_reset run`）。
+3. **OTA**: 仅更新 ESP-Hosted slave 固件（已验证镜像），非任意自定义固件。
+4. **ESP-Serial-Flasher**: 替代方案 — P4 可通过直接 UART GPIO 连接烧录 C6（专用 UART，非 ESP-Hosted SDIO 总线）。
+
+#### A3 执行路径（已选）
+- **方案**: P4 独立验证（用户决策）
+- C6 作为出厂 ESP-Hosted Wi-Fi/BT 协处理器保持不动（不烧录）
+- 添加 `CONFIG_P4_INTERNAL_MOCK=y` Kconfig 标志 + `mock_data_source` 模块到 P4 固件
+- 每手 50Hz 生成合成 L/R GlovePacket，直接喂入 `FramePairer`
+
+#### P4 硬件验证结果
+
+| 子系统 | 状态 | 证据 |
+|--------|------|------|
+| 启动 | ✅ PASS | ESP-IDF v5.4, 已检测 32MB PSRAM, app 从 flash 加载 |
+| LVGL 显示 | ✅ PASS | BSP display_start, 1024×600 MIPI-DSI, LVGL 掄件已创建 |
+| FramePairer | ✅ PASS | L/R 对正确配对 (Pair tick=0..N 日志) |
+| TFLite Stub | ✅ PASS | Stub 循环: `Tier2 #N: gesture=4 conf=0.800 time=2 us` |
+| 显示更新 | ✅ PASS | `Gesture: 你好 (80%)`, `Status: C6=0 P4=1 Tier=2` |
+| ES8311 音频 | ✅ INIT | 编码器初始化 @ 16kHz/16bit/mono; PCM 文件缺失（无 SD 卡） |
+| USB CDC (TinyUSB) | ✅ INIT | TinyUSB HS CDC 已枚举; 需 USB 线连接 PC 才能读取 JSON 输出 |
+| LCD DSI Underrun | ⚠️ 已知 | `lcd.dsi.dpi: can't fetch data from external memory fast enough` — P4 EV Board PSRAM 带宽问题，纯视觉故障 |
+| SD 卡 | ❌ 不适用 | 未插入 microSD, `sdmmc_init_ocr: send_op_cond returned 0x107` |
+
+#### 本次提交（本会话）
+| SHA | 说明 |
+|-----|------|
+| `4f541bb` | feat(p4): internal mock data source for standalone verification (A3) |
+| `3cf2f3a` | fix(web+relay): WebSocket 403 → use /ws endpoint; add pyserial-asyncio dep |
+
+#### Track B (Mock Relay → Browser E2E) — 已完成（前期会话）
+- WebSocket 403 bug 修复 (`/ws` endpoint)
+- `pyserial-asyncio` 依赖添加
+- 已验证: relay mock @30fps → WS → React dashboard, 0 JS errors, FPS=32
+
+#### 待办
+- **USB CDC JSON 输出**: 需将 P4 USB HS 端口用 USB 线连接 PC 才能读取推理 JSON
+- **SD 卡 + TTS**: 插入带 `/tts/*.pcm` 文件的 microSD 卡以验证音频
+- **C6 Wi-Fi/BT**: 将 ESP-Hosted 集成到 P4 固件以实现 Wi-Fi 连接（后续阶段）
+- **LCD DSI underrun**: 调查 PSRAM 带宽调优（低优先级）
+
+
+---
+
+## V5.3 有线开发路径 — S3→P4 直连 UART (2026-07-09)
+
+### 架构调整决策
+板上 C6 是 ESP-Hosted Wi-Fi/BT 协处理器（SDIO 总线，出厂预烧）。ESP-Hosted **不支持 ESP-NOW**。原 `c6_firmware` mock-ESP-NOW bridge 不兼容。
+
+**决策**: S3 → P4 直连 UART（绕过 C6）。C6 延后到 Wi-Fi 集成阶段。
+- 分支: `feature/v6-dual-s3p4-flex-lsm6dsv16x`
+- Tag: `v5.3-wired-dev` (基线)
+- GPIO 审计: S3 GPIO6 (TX) 空闲 → P4 GPIO38 (RX)。双手通过双 UART 物理隔离（无总线竞争）。
+- 设计: `docs/superpowers/specs/2026-07-08-s3-p4-wired-uart-design.md`
+- 计划: `docs/superpowers/plans/2026-07-09-s3-p4-wired-uart.md`
+
+### 实施状态
+- [ ] 阶段 1: S3 UARTTransmitter.h + native 测试 (TDD)
+- [ ] 阶段 2: S3 main.cpp 并行 UART TX (WIRED_UART=1)
+- [ ] 阶段 3: P4 sdkconfig CONFIG_P4_INTERNAL_MOCK=n
+- [ ] 阶段 4: 硬件接线 + 端到端验证
+- [ ] 阶段 5: 双手 (P4 第二 UART)
+
+### 文档更新（本次会话）
+- ✅ CLAUDE.md: 顶部新增 V5.3 章节
+- ✅ docs/V6/03_wiring_diagram.md: §5 S3↔P4 直连 UART (active), §6 C6↔P4 (deferred), 重新编号
+- ✅ docs/V6/01_architecture_diagrams.md: 新增架构更新说明
+- ✅ docs/V6/04_SOP-SPEC-PLAN_V6.md: 新增通信更新说明 + 修正分支名
+- ✅ 记忆: `p4-ev-board-c6-esp-hosted.md`, 更新 `project-p4-base-station-verification-progress.md`

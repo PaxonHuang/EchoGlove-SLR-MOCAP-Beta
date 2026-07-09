@@ -1,9 +1,11 @@
 # EchoGlove V6.0 -- System Architecture Diagrams
 
 > **Version**: V6.0
-> **Date**: 2026-06-23
+> **Date**: 2026-06-23 (updated 2026-07-09)
 > **Status**: Draft
 > **Supersedes**: V5.0 DualGloveFlex + V5.2 P4 Base Station
+
+> **⚠️ Architecture Update (2026-07-09, V5.3 wired dev path)**: The on-board C6 is an ESP-Hosted Wi-Fi/BT co-processor (SDIO bus, pre-flashed slave firmware) and does **not** support ESP-NOW pass-through. During development, S3 gloves connect **directly** to the P4 over UART (2 Mbps, CRC-16/MODBUS framing), bypassing C6. C6 is deferred to a future Wi-Fi integration phase. The diagrams below still depict the original C6→P4 ESP-NOW relay topology for reference; treat the "C6 Relay → UART → P4" segment as replaced by "S3 → UART → P4 (direct, wired)". See `docs/superpowers/specs/2026-07-08-s3-p4-wired-uart-design.md` + `docs/superpowers/plans/2026-07-09-s3-p4-wired-uart.md`.
 
 ---
 

@@ -2,6 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## V5.3 Wired Dev Path — S3→P4 Direct UART (2026-07-09, ACTIVE)
+
+**Architecture pivot**: The on-board C6 on the P4 EV Board is an **ESP-Hosted Wi-Fi/BT co-processor** (SDIO bus, factory pre-flashed slave firmware v0.0.6). ESP-Hosted does **NOT support ESP-NOW** pass-through. The original `c6_firmware` mock-ESP-NOW bridge is incompatible with this hardware.
+
+**Current dev path**: S3 gloves connect **directly** to the P4 over UART (2 Mbps, CRC-16/MODBUS framing via `shared/uart_frame.h`), bypassing C6 entirely. C6 is deferred to a future Wi-Fi integration phase.
+
+- **Branch**: `feature/v6-dual-s3p4-flex-lsm6dsv16x`
+- **Tag**: `v5.3-wired-dev` (baseline before UART implementation)
+- **Design**: `docs/superpowers/specs/2026-07-08-s3-p4-wired-uart-design.md`
+- **Plan**: `docs/superpowers/plans/2026-07-09-s3-p4-wired-uart.md`
+- **Wiring**: S3 GPIO6 (TX) → P4 GPIO38 (RX) + GND (see `docs/V6/03_wiring_diagram.md` §5)
+- **S3 firmware**: ESP-NOW + UART parallel TX (compile flag `WIRED_UART=1`); UART is wired fallback
+- **P4 firmware**: `uart_receiver` (UART0, GPIO37 TX / GPIO38 RX, 2Mbps) already complete; standalone verified via `CONFIG_P4_INTERNAL_MOCK=y` (commit `4f541bb`)
+- **C6**: NOT flashed; stays as factory ESP-Hosted co-processor. Flash via PROG_C6 + CH340 only if a custom app is needed (P4 must be in bootloader mode first). See memory `p4-ev-board-c6-esp-hosted`.
+
+**Verification status (2026-07-08)**: P4 standalone verified — LVGL display + TFLite stub + ES8311 audio init + TinyUSB CDC init all PASS. A3 hardware verification complete (commit `4f541bb`). Track B (mock relay→browser E2E) complete (commit `3cf2f3a`).
+
+---
+
 ## V5.2 DualGloveFlex + P4 Base Station (2026-06-01)
 - Branch: V5-DualGloveFlex
 - V5 Spec: docs/superpowers/specs/2026-06-01-v5-dual-glove-flex-design.md
