@@ -276,19 +276,24 @@ Planned (NOT yet in code):
 - **Comm**: S3 ESP-NOW broadcast (current, ✅); wired UART S3→P4 GPIO6→GPIO38 (designed, 🟡 not implemented)
 - **Deprecated**: ~~BNO085~~, ~~2× ADS1115 (0x48/0x49)~~, ~~TCA9548A MUX~~, ~~TMAG5273~~ — see `docs/archive/`
 
-### LSM6DSV16X Wiring (V6 target — see `docs/V6/03_wiring_diagram.md` §2 for full table)
+### LSM6DSV16X Wiring (breakout module, I²C — V6 target, see `docs/V6/03_wiring_diagram.md` §2)
 
-| LSM6DSV16X Pin | ESP32-S3 Pin | Notes |
-|----------------|--------------|-------|
-| VDD / VDDIO | 3.3V | **NOT 5V!** (1.71–3.6V) |
-| GND (pin4+13) | GND | both GND pins |
-| SDA/SDI | GPIO8 | 4.7kΩ pull-up |
+Project uses a **breakout module** (LGA-14L on small PCB; merges VDD/VDDIO→VCC, has decoupling caps). The chip has **no driver yet** (IMU=zeros).
+
+| Breakout Pin | ESP32-S3 Pin | Notes |
+|--------------|--------------|-------|
+| VCC | 3.3V | **NOT 5V** (1.71–3.6V) |
+| GND | GND | |
+| ADO/MISO (SA0) | GND | LOW=0x6A (HIGH=0x6B) |
+| SDA/MOSI | GPIO8 | 4.7kΩ pull-up |
 | SCL/SCLK | GPIO9 | 4.7kΩ pull-up |
-| SDO/SA0 | GND | LOW=0x6A, HIGH=0x6B |
-| CS | 3.3V | HIGH=I2C mode |
-| INT1 | GPIO10 | optional data-ready |
+| CS | **3.3V** | **mandatory HIGH for I²C** (LOW→SPI, no I²C response) |
+| INT1 | GPIO10 (optional) | NC if polling |
+| **SDX / SCX** | **NC** | aux sensor-hub I²C bus — **do not wire** (common wiring mistake) |
+| INT2 | NC (optional) | |
 
-> **BNO085 wiring is historically retained** in `docs/V6/03_wiring_diagram.md` §8.4 (migration reference). BNO085 is no longer in active code; key legacy gotcha: PS0/PS1 latched at power-up, PS0=3.3V selects SPI and can damage the module.
+> Bare LGA-14L pad map (custom PCB) in `03_wiring_diagram.md` §2.2.
+> **BNO085** historically retained in `03_wiring_diagram.md` §8.4 (migration reference); no longer in active code.
 
 ---
 

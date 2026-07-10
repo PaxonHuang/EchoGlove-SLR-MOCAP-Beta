@@ -47,7 +47,46 @@ Flat bus topology, no MUX. In V6 the I²C bus carries a single device (LSM6DSV16
 
 ## 2. LSM6DSV16X Pin Connection Table
 
-14-pin LGA package. All references are to ESP32-S3-DevKitC-1 N16R8 GPIO numbers.
+> **Form factor note (verified 2026-07-10)**: The project uses a **breakout module** (LGA-14L chip pre-soldered on a small PCB with 2.54mm header pads — see `02_BOM_table.md` §6). The bare 14-pin LGA chip is too small to wire on a breadboard, so tables below are written for the **breakout module's exposed pins**, not the raw LGA pad numbers. The module already integrates decoupling caps and ties VDD/VDDIO together internally → only one VCC pin.
+
+### 2.1 Breakout Module Pins (actual exposed header — what you wire)
+
+The breakout exposes ~10 pins. Dual labels (e.g. `SDA/MOSI`, `ADO/MISO`) mean the pin serves both I²C and SPI modes; we use **I²C only**.
+
+```
+  LSM6DSV16X breakout module (top view, 2.54mm header)
+  ┌────────────────────────────┐
+  │  VCC   GND                 │
+  │  ADO   SDA/MOSI            │
+  │  SCL/SCLK   CS             │
+  │  INT1   SDX                │
+  │  SCX    INT2               │
+  └────────────────────────────┘
+```
+
+| Module Pin | datasheet func (I²C mode) | Connect To | Notes |
+|------------|---------------------------|------------|-------|
+| VCC        | VDD + VDDIO (merged)      | **3.3V**   | **NOT 5V** (chip 1.71–3.6V); module merges VDD/VDDIO |
+| GND        | GND                       | GND        | Common ground |
+| ADO / MISO | SA0 (address select)      | **GND**    | LOW = 0x6A (MISO only used in SPI mode) |
+| SDA / MOSI | I²C SDA                   | ESP32-S3 **GPIO8** | 4.7kΩ pull-up to 3.3V (check if module has on-board pull-ups — don't double them) |
+| SCL / SCLK | I²C SCL                   | ESP32-S3 **GPIO9** | 4.7kΩ pull-up to 3.3V |
+| CS         | mode select (I²C=HIGH)    | **3.3V**   | **Must tie HIGH for I²C mode** (LOW = SPI chip-select → chip won't answer I²C). Active-low /CS bar. |
+| INT1       | data-ready interrupt       | GPIO10 (optional) / NC | Optional: data-ready / significant-motion. Leave NC if polling. |
+| **SDX**    | aux sensor-hub SDA (aux I²C bus) | **NC** | Auxiliary sensor hub bus (reads external sensors onboard the IMU). **Not used here → leave unconnected.** |
+| **SCX**    | aux sensor-hub SCL (aux I²C bus) | **NC** | Same auxiliary bus as SDX. **Not used → leave unconnected.** |
+| INT2       | interrupt 2                | NC (optional) | Optional freefall/wakeup. Leave NC. |
+
+**Critical wiring rules (breakout)**:
+1. **CS → 3.3V** is mandatory for I²C mode (most common wiring mistake — floating/low CS puts the chip in SPI mode and I²C scan finds nothing).
+2. **ADO → GND** sets address **0x6A** (ADO → 3.3V would be 0x6B). Pin is latched at power-up — power-cycle if changed.
+3. **SDX/SCX must be left NC** — they are the auxiliary sensor-hub I²C bus, unrelated to the main SDA/SCL. Do not wire them to the ESP32.
+4. **No external decoupling caps needed** (module has them). Raw-LGA users see §2.2 below.
+5. **5V will damage the chip** — use 3.3V only.
+
+### 2.2 Bare LGA-14L Reference (chip-level, for custom PCB / no-breakout)
+
+For completeness / custom-breakout PCB designers. A breakout module (§2.1) supersedes this — do not wire by LGA pad numbers if using a breakout.
 
 ```
   LSM6DSV16X 14-pin LGA (top view, pin 1 indicator at top-left)
@@ -61,25 +100,9 @@ Flat bus topology, no MUX. In V6 the I²C bus carries a single device (LSM6DSV16
   │ 7 (RES)    8 (INT2) │
   └─────────────────────┘
 ```
-
-| Pin | Name      | Connect To          | Voltage | Notes                                  |
-|-----|-----------|---------------------|---------|----------------------------------------|
-| 1   | CS        | 3.3V                | 3.3V    | HIGH = I2C mode (CS bar active LOW)    |
-| 2   | SDO/SA0   | GND                 | 0V      | I2C address = 0x6A (LOW)               |
-| 3   | Reserved  | NC                  | --      | Leave unconnected                      |
-| 4   | GND       | GND                 | 0V      | Ground                                 |
-| 5   | SDA/SDI   | ESP32-S3 GPIO8      | 3.3V    | I2C data, 4.7k pull-up to 3.3V        |
-| 6   | SCL/SCLK  | ESP32-S3 GPIO9      | 3.3V    | I2C clock, 4.7k pull-up to 3.3V       |
-| 7   | Reserved  | NC                  | --      | Leave unconnected                      |
-| 8   | INT2      | NC or GPIO11        | 3.3V    | Optional: freefall/wakeup interrupt    |
-| 9   | INT1      | ESP32-S3 GPIO10     | 3.3V    | Optional: data-ready / significant motion |
-| 10  | Reserved  | NC                  | --      | Leave unconnected                      |
-| 11  | Reserved  | NC                  | --      | Leave unconnected                      |
-| 12  | VDDIO     | 3.3V                | 3.3V    | I/O supply voltage                     |
-| 13  | GND       | GND                 | 0V      | Ground (connect both GND pins)         |
-| 14  | VDD       | 3.3V                | 3.3V    | Main supply voltage                    |
-
-**Power Decoupling**: Place 100nF ceramic capacitor between VDD (pin 14) and GND (pin 13), as close to the module as possible. Place 10nF between VDDIO (pin 12) and GND (pin 4).
+- Pad 1=CS→3.3V(I²C), 2=SA0→GND(0x6A), 5=SDA→GPIO8, 6=SCL→GPIO9, 9=INT1→GPIO10, 14=VDD→3.3V, 12=VDDIO→3.3V, 4/13=GND. Pads 3/7/10/11 reserved NC.
+- SDX/SCX are not exposed as LGA pads on LSM6DSV16X (they map to the I3C/aux function via internal bond); breakout modules that surface SDX/SCX expose them as convenience aux-hub pins.
+- Decoupling (bare chip): 100nF VDD–GND, 10nF VDDIO–GND.
 
 ---
 
@@ -312,11 +335,14 @@ The (future production) ESP32-C6 co-processor relays Wi-Fi-received glove data t
 - If using a breakout board with built-in pull-ups, verify they are 4.7k ohm and not duplicated (parallel pull-ups reduce effective resistance).
 - Total bus capacitance should stay below 400pF for 400 kHz operation.
 
-### 8.3 LSM6DSV16X CS and SDO/SA0 Behavior
+### 8.3 LSM6DSV16X CS and ADO/SA0 Behavior
 
-- **CS (pin 1) = 3.3V**: Forces I2C mode. If CS is left floating, the chip may enter SPI mode on power-up, causing I2C communication failure.
-- **SDO/SA0 (pin 2) = GND**: Sets I2C address to 0x6A. If connected to 3.3V, address becomes 0x6B.
-- CS and SDO/SA0 are latched at power-up. Changing them after power-on has no effect. Power cycle the module if changing I2C/SPI mode or address.
+> These rules apply identically to the breakout (§2.1, CS/ADO pins) and bare chip (§2.2, pads 1/2). `pin 1`/`pin 2` below are LGA pad numbers; on a breakout the same signals surface as the `CS` and `ADO/MISO` header pins.
+
+- **CS (pin 1) = 3.3V**: Forces I2C mode. If CS is left floating, the chip may enter SPI mode on power-up, causing I2C communication failure. (On breakout: the `CS` header.)
+- **ADO/SA0 (pin 2) = GND**: Sets I2C address to 0x6A. If connected to 3.3V, address becomes 0x6B. (On breakout: the `ADO/MISO` header.)
+- CS and ADO/SA0 are latched at power-up. Changing them after power-on has no effect. Power cycle the module if changing I2C/SPI mode or address.
+- **SDX/SCX**: the auxiliary sensor-hub I²C bus — leave NC on breakout (no main I²C role).
 
 ### 8.4 BNO085 PS0/PS1 (Historical -- No Longer Applies)
 
@@ -394,6 +420,8 @@ If INT1 is not needed, GPIO10 can be left unconnected and the LSM6DSV16X INT1 pi
 ---
 
 ## Appendix: Complete Per-Glove Wiring Summary
+
+> ⚠️ The diagram below is **chip-level** (LGA pad numbers, VDD/VDDIO separate, external decoupling caps). If you use a **breakout module** (project default), follow §2.1 instead — the breakout merges VDD/VDDIO into VCC, has on-board decoupling, and exposes CS/ADO/SDX/SCX as header pins (SDX/SCX leave NC).
 
 ```
   ESP32-S3-DevKitC-1 N16R8

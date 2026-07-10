@@ -151,25 +151,29 @@ ESP32-S3 (SDA=GPIO8, SCL=GPIO9, 400kHz)
 - **V6**: LSM6DSV16X@0x6A only (1 device) — flex sensors no longer on I²C
 - **Address**: BNO085@0x4B → LSM6DSV16X@0x6A (SDO/SA0=GND) or @0x6B (SDO/SA0=VDD)
 
-### 2.4 LSM6DSV16X Wiring (ESP32-S3-DevKitC-1 N16R8)
+### 2.4 LSM6DSV16X Wiring (breakout module, I²C mode)
 
-| LSM6DSV16X Pin | ESP32-S3 Pin | Notes |
-|----------------|--------------|-------|
-| VDD | 3.3V | **1.71-3.6V, NOT 5V!** |
-| VDDIO | 3.3V | I/O supply voltage |
-| GND | GND | |
-| SDA/SDI | GPIO8 | 4.7kΩ pull-up to 3.3V |
-| SCL/SCLK | GPIO9 | 4.7kΩ pull-up to 3.3V |
-| SDO/SA0 | GND | LOW=0x6A, HIGH=0x6B |
-| CS | 3.3V | HIGH=I2C mode, LOW=SPI mode |
-| INT1 | GPIO10 | Optional: data-ready interrupt |
-| INT2 | Floating | Not used |
+> Project uses a **breakout module** (LGA-14L pre-soldered on small PCB, ~10 exposed 2.54mm header pins). The module merges VDD/VDDIO into one VCC pin and integrates decoupling caps. Full breakout vs bare-chip pinout in `docs/V6/03_wiring_diagram.md` §2.
+
+| Breakout Pin | datasheet func (I²C) | ESP32-S3 Pin | Notes |
+|--------------|----------------------|--------------|-------|
+| VCC | VDD+VDDIO (merged) | **3.3V** | **NOT 5V** (1.71–3.6V) |
+| GND | GND | GND | |
+| ADO / MISO | SA0 address select | **GND** | LOW=0x6A (HIGH=0x6B) |
+| SDA / MOSI | I²C SDA | **GPIO8** | 4.7kΩ pull-up (module may have on-board — don't double) |
+| SCL / SCLK | I²C SCL | **GPIO9** | 4.7kΩ pull-up |
+| CS | mode select (I²C=HIGH) | **3.3V** | **Mandatory HIGH for I²C** (LOW→SPI, I²C scan finds nothing) |
+| INT1 | data-ready interrupt | GPIO10 (optional) | NC if polling |
+| **SDX** | aux sensor-hub SDA | **NC** | Auxiliary I²C bus — not used, leave unconnected |
+| **SCX** | aux sensor-hub SCL | **NC** | Auxiliary I²C bus — not used, leave unconnected |
+| INT2 | interrupt 2 | NC (optional) | |
 
 **Critical Notes**:
-- CS=HIGH for I2C mode (CS=LOW selects SPI, same as BNO085 PS0 behavior)
-- SDO/SA0 pin latched at power-up — do not change during operation
-- VDD and VDDIO can be tied together for single 3.3V supply
-- 14-pin LGA package, 2.5×3×0.83mm — needs breakout board for breadboard
+- **CS → 3.3V is mandatory** for I²C mode (floating/LOW = SPI → no I²C response).
+- ADO/SA0 latched at power-up — power-cycle if changed (GND=0x6A / VDD=0x6B).
+- **SDX/SCX are the auxiliary sensor-hub I²C bus, NOT the main SDA/SCL** — leave NC. (Common confusion: do not wire SDX/SCX to the ESP32.)
+- No external decoupling caps on a breakout (module has them).
+- Bare LGA-14L (2.5×3×0.83mm) needs a breakout/adapter for breadboard use — see `03_wiring_diagram.md` §2.2.
 
 ### 2.5 Flex Sensor Wiring (Unchanged from V5)
 
