@@ -34,35 +34,46 @@
 
 3-tier, dual-glove + P4 smart base station architecture for sign language translation and hand motion capture.
 
+> **Implementation status (code-verified 2026-07-10)**: the diagram below is the **target V6 architecture**. Currently in code: flex=internal ADC1 ✅, S3 comm=ESP-NOW ✅, P4 UART RX + USB CDC ✅, P4 standalone mock-verified ✅. **Not yet implemented**: LSM6DSV16X driver (IMU=zeros), wired UART (S3→P4 direct, `WIRED_UART` flag absent). The on-board C6 is an ESP-Hosted co-processor that **cannot run** the ESP-NOW relay bridge — see top-of-file banner. The designed C6→P4 ESP-NOW→UART chain is retained as the historical/production reference; the verified end-to-end path today is **P4 standalone with internal mock data**.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                     EchoGlove V6.0 System Architecture                  │
+│                     EchoGlove V6.0 System Architecture (target)         │
 │                                                                         │
-│  ┌──────────────┐    ESP-NOW     ┌──────────────┐   UART 2Mbps         │
-│  │  Left Glove  │  ──────────►   │  C6 Relay    │──────────►┌────────┐ │
-│  │  ESP32-S3    │   (2ms,69B)    │  ESP32-C6    │           │  P4    │ │
-│  │  11-dim      │               └──────────────┘           │ 400MHz │ │
-│  │  Tier1 CNN   │                                          │ Tier2  │ │
-│  └──────────────┘                                          │ LVGL   │ │
-│                                                            │ TTS    │ │
-│  ┌──────────────┐    ESP-NOW                                └───┬────┘ │
-│  │ Right Glove  │  ──────────►   (same C6)                     │ USB  │
-│  │  ESP32-S3    │                                               │ HS   │
-│  │  11-dim      │                                               ▼      │
-│  │  Tier1 CNN   │        ┌──────────────┐    WS:8765  ┌──────────┐    │
-│  └──────────────┘        │  PC Relay    │ ──────────► │ React3F  │    │
-│                          │  Tier3 L1/L2 │             │ Unity XR │    │
-│                          │  NLP + TTS   │             └──────────┘    │
-│                          └──────────────┘                             │
+│  ┌──────────────┐   ESP-NOW/cable  ┌──────────────┐   UART 2Mbps       │
+│  │  Left Glove  │  ──────────────► │  C6 / direct │──────────►┌────────┐│
+│  │  ESP32-S3    │  (2ms,69B)       │  relay       │           │  P4    ││
+│  │  11-dim      │                  └──────────────┘           │ 400MHz ││
+│  │  Tier1 CNN   │  (S3 flex=ADC1 ✅; IMU=LSM6DSV16X 🟡)        │ Tier2  ││
+│  └──────────────┘                                             │ LVGL   ││
+│                                                               │ TTS    ││
+│  ┌──────────────┐   ESP-NOW/cable                              └───┬────┘│
+│  │ Right Glove  │  ──────────────►   (same path)                    │ USB │
+│  │  ESP32-S3    │                                                    │ HS  │
+│  │  11-dim      │                                                    ▼     │
+│  │  Tier1 CNN   │        ┌──────────────┐    WS:8765  ┌──────────┐   │
+│  └──────────────┘        │  PC Relay    │ ──────────► │ React3F  │   │
+│                          │  Tier3 L1/L2 │             │ Unity XR │   │
+│                          │  NLP + TTS   │             └──────────┘   │
+│                          └──────────────┘                            │
+│  Dev path (designed, pending): S3 ──direct UART 2Mbps──► P4 (bypass C6)│
+│  Prod path (future): C6 ──ESP-Hosted Wi-Fi/UDP──► P4                   │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 1.2 Core Data Flow
+**Comm path selection**:
+| Path | Status | When |
+|------|--------|------|
+| S3 → (ESP-NOW) → C6 → UART → P4 | 🟡 designed; C6 can't run ESP-Hosted+ESP-NOW bridge | historical reference |
+| S3 → direct UART → P4 (bypass C6) | 🟡 designed (`WIRED_UART`, not in code) | **active dev target** |
+| C6 → ESP-Hosted Wi-Fi/UDP → P4 | 🟡 planned | future production |
 
-1. Each glove: 5×Flex + LSM6DSV16X → 11-dim @ 100Hz → Kalman filter → Tier1 inference → ESP-NOW broadcast
-2. C6: Receive L/R packets → UART relay to P4
-3. P4: Pair by tick_id → compute 6-dim relative features → 28-dim → Tier2 inference → LVGL display + TTS audio
-4. P4 → USB HS → PC Relay: Tier3 inference (L1 classification + L2 ST-GCN) → Confidence Router → NLP → TTS → WebSocket
+### 1.2 Core Data Flow (target; current IMU=zeros, LSM6DSV16X pending)
+
+1. Each glove: 5×Flex (internal ADC1 ✅) + LSM6DSV16X (🟡 pending → IMU=zeros today) → 11-dim @ 100Hz → Kalman filter → Tier1 inference → ESP-NOW broadcast (✅)
+2. C6: Receive L/R packets → UART relay to P4 (🟡 designed; on-board C6 is ESP-Hosted, cannot run this bridge — use direct S3→P4 UART dev path)
+3. P4: Pair by tick_id → compute 6-dim relative features → 28-dim → Tier2 inference → LVGL display + TTS audio (✅ P4 side, standalone mock-verified)
+4. P4 → USB CDC → PC Relay: Tier3 inference (L1 classification + L2 ST-GCN) → Confidence Router → NLP → TTS → WebSocket (✅ P4→PC CDC output)
 5. Frontend: React3F / Unity XR Hands renders 26-joint virtual hands
 
 ### 1.3 Feature Dimensions (Unchanged from V5)
@@ -206,13 +217,15 @@ ESP32-S3 (SDA=GPIO8, SCL=GPIO9, 400kHz)
 
 ## 3. Firmware Layer
 
-### 3.1 FreeRTOS Task Allocation (Per Glove — Unchanged from V5)
+### 3.1 FreeRTOS Task Allocation (Per Glove — target V6)
+
+> Current code (verified 2026-07-10): Task_SensorRead reads **internal ADC1 flex** (no I2C active — LSM6DSV16X driver pending, IMU=zeros); Task_Comms does **ESP-NOW broadcast** (BLE/UDP are V5-historical, not active).
 
 | Task | Core | Priority | Freq | Purpose |
 |------|------|----------|------|---------|
-| Task_SensorRead | Core 1 | 3 (highest) | 100Hz | I2C read ADS1115×2 + LSM6DSV16X, Kalman filter |
+| Task_SensorRead | Core 1 | 3 (highest) | 100Hz | ADC1 flex sampling + Kalman; (target: + LSM6DSV16X I2C read once driver lands) |
 | Task_Inference | Core 0 | 2 | ~30Hz | Tier1 CNN inference, output gesture_id + confidence |
-| Task_Comms | Core 0 | 1 | 100Hz | ESP-NOW send + BLE provisioning |
+| Task_Comms | Core 0 | 1 | 100Hz | ESP-NOW broadcast (✅ current); (target: + wired UART parallel TX via `WIRED_UART`) |
 | Task_Watchdog | Core 0 | 0 (lowest) | 1Hz | Watchdog feed, health check |
 
 ### 3.2 Data Structures (`data_structures.h` — Interface Unchanged)
@@ -395,14 +408,18 @@ bool SensorManager::readIMU(SensorData& data) {
 
 ## 4. Communication Protocol
 
-### 4.1 Three-Level Communication Chain (Unchanged from V5)
+> **Status (code-verified 2026-07-10)**: In firmware, S3 currently uses **ESP-NOW broadcast** (`esp_now_send`). The C6→P4 UART relay is implemented in `c6_firmware` but **cannot run on the EV board's on-board C6** (ESP-Hosted, no ESP-NOW). The **direct S3→P4 wired UART** path (the active dev target) is **designed but not yet implemented** — `WIRED_UART` flag is not in code. See `docs/superpowers/specs/2026-07-08-s3-p4-wired-uart-design.md`. Framing (73-byte CRC-16/MODBUS frame via `shared/uart_frame.h`) is shared across all UART paths.
+
+### 4.1 Three-Level Communication Chain (target)
 
 ```
-Glove → ESP-NOW → C6 → UART 2Mbps → P4 → USB HS → PC Relay → WebSocket → Frontend
-       (69B,2ms)       (73B frame)      (Protobuf)     (JSON)
+[Dev, designed-pending]  S3 ──direct UART 2Mbps──► P4 ──USB CDC──► PC Relay ──WS:8765──► Frontend
+[Reference, C6 can't run]  Glove ──ESP-NOW──► C6 ──UART 2Mbps──► P4 ──USB HS──► PC ──WS──► Frontend
+                         (69B,2ms)       (73B frame)      (Protobuf)     (JSON)
+[Future production]       Glove ──Wi-Fi/UDP──► C6(ESP-Hosted) ──► P4 ──USB──► PC
 ```
 
-### 4.2 ESP-NOW (Glove → C6)
+### 4.2 ESP-NOW (Glove → C6) — current S3 comm, C6-bridge path deferred
 
 - 69-byte `GlovePacket` struct (defined in Section 3.2)
 - Broadcast mode, no pairing

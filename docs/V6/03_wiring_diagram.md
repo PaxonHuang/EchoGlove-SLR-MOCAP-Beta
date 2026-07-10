@@ -1,9 +1,9 @@
 # EchoGlove V6.0 Wiring Diagram
 
-> **Branch**: V5-DualGloveFlex (V6 development)
-> **Date**: 2026-06-23
+> **Branch**: `feature/v6-dual-s3p4-flex-lsm6dsv16x` (active)
+> **Date**: 2026-06-23 (updated 2026-07-10)
 > **MCU**: ESP32-S3-DevKitC-1 N16R8 (per glove)
-> **IMU Change**: BNO085 (0x4B) replaced by ST LSM6DSV16X (0x6A)
+> **IMU**: BNO085 (0x4B) → ST LSM6DSV16X (0x6A) — **driver not implemented yet (IMU=zeros in current code); flex on internal ADC1 is implemented**
 
 ---
 
@@ -147,9 +147,9 @@ V6 removed the two ADS1115 ADCs. Flex sensors connect directly to ESP32-S3 ADC1 
 
 ---
 
-## 5. S3 ↔ P4 Direct UART Wiring (V5.3 Wired Dev Path — Active)
+## 5. S3 ↔ P4 Direct UART Wiring (V5.3 Wired Dev Path — Designed, code-pending)
 
-> **Status (2026-07-09)**: **Active development path.** The on-board C6 is an ESP-Hosted Wi-Fi/BT co-processor (pre-flashed slave firmware, SDIO bus) and does **not** support ESP-NOW pass-through. During development, S3 gloves connect **directly** to the P4 over UART, bypassing C6. C6 is deferred to a future Wi-Fi integration phase. See `docs/superpowers/specs/2026-07-08-s3-p4-wired-uart-design.md`.
+> **Status (2026-07-10, code-verified)**: **Designed, not yet implemented in firmware.** S3 currently uses ESP-NOW broadcast; the `WIRED_UART` compile flag does **not exist in code yet**. The on-board C6 is an ESP-Hosted Wi-Fi/BT co-processor (pre-flashed slave firmware, SDIO bus) and does **not** support ESP-NOW pass-through, so the planned dev path bypasses C6: S3 → direct UART → P4. C6 is deferred to a future Wi-Fi integration phase. See `docs/superpowers/specs/2026-07-08-s3-p4-wired-uart-design.md`.
 
 The ESP32-S3 glove transmits GlovePacket data directly to the ESP32-P4 base station over UART at 2 Mbps, reusing the same CRC-16/MODBUS framing as the (deferred) C6→P4 path. This is a **unidirectional** link (S3 TX → P4 RX) — no back-channel is needed since the P4 only consumes telemetry.
 
@@ -187,7 +187,7 @@ Each glove gets its own dedicated TX line into a separate P4 UART — physical i
 - Common ground is mandatory for UART at 2 Mbps.
 - No external pull-ups needed for UART lines (TX-only, P4 RX has internal config).
 - 73-byte frame = 2 magic + 69 payload + 2 CRC (same `uart_frame.h` protocol as C6 path).
-- S3 sends ESP-NOW **and** UART in parallel (compile flag `WIRED_UART=1`); UART is the wired fallback.
+- **Target**: S3 sends ESP-NOW **and** UART in parallel (compile flag `WIRED_UART=1`, planned). UART is the wired fallback. **Currently only ESP-NOW is implemented** — wired UART TX is pending `UARTTransmitter.h` (TDD, see plan `2026-07-09-s3-p4-wired-uart.md`).
 
 ---
 

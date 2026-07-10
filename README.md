@@ -1,41 +1,77 @@
-# EchoGlove V5.2 — Edge-AI Data Glove + P4 Smart Base Station
+# EchoGlove — Edge-AI Data Glove + P4 Smart Base Station
 
 **3-tier inference system for real-time sign language translation and 3D hand animation, with dual-hand support.**
 
-![1778514913749](image/README/1778514913749.jpg)
+![EchoGlove](image/README/1778514913749.jpg)
+
+> **Branch**: `feature/v6-dual-s3p4-flex-lsm6dsv16x` (active)
+> **Last verified vs code**: 2026-07-10
+
+---
+
+## System Status (code-verified 2026-07-10)
+
+The project is mid-migration from V5 (BNO085 + ADS1115 + ESP-NOW) to V6 (LSM6DSV16X + internal ADC + wired UART / Wi-Fi UDP). To avoid misleading collaborators, the table below distinguishes **what actually runs** from **what is designed but not yet implemented**.
+
+| Layer | Status | Detail |
+|-------|--------|--------|
+| ✅ Flex sensors (5×) | **Implemented** | ESP32-S3 **internal ADC1** (GPIO1–5), N=16 oversample, NVS calibration (`InternalADCManager.h`) |
+| ✅ S3 → C6 comm | **Implemented** | ESP-NOW broadcast (`esp_now_send`, 69B `GlovePacket`) |
+| ✅ C6 → P4 relay | **Implemented** | C6 receives ESP-NOW → UART 2 Mbps frame to P4 (`c6_firmware`) |
+| ✅ P4 receive + output | **Implemented** | P4 UART RX (pin 37/38, 2 Mbps) → Tier2 stub → USB CDC JSON to PC |
+| ✅ P4 standalone | **Verified** | LVGL display + TFLite stub + ES8311 audio + TinyUSB CDC init (`CONFIG_P4_INTERNAL_MOCK`) |
+| 🟡 IMU (LSM6DSV16X) | **Designed / not implemented** | Driver does not exist in firmware yet; **IMU output is currently zeros** (`SensorManager.h` TODO). BNO085 path already removed. |
+| 🟡 S3 → P4 wired UART | **Designed / not implemented** | `WIRED_UART` compile flag not in code; S3 currently uses ESP-NOW. Bypasses C6 over direct UART (GPIO6→GPIO38). See V5.3 wired spec. |
+| 🟡 Wi-Fi / UDP (future) | **Planned** | On-board C6 is an ESP-Hosted Wi-Fi/BT co-processor (SDIO); will provide Wi-Fi/UDP in production, not ESP-NOW pass-through. |
+| ❌ BNO085 / ADS1115 | **Deprecated** | BNO085 removed from active code (lib_deps entry is stale, see §Tech Debt); `ADS1115Manager.h` is dead code pending cleanup. |
+
+> See `docs/V6/04_SOP-SPEC-PLAN_V6.md` for the full V6 design and `PROGRESS.md` for current checkpoints.
 
 ---
 
 ## Architecture
 
 ```
-Gloves (ESP32-S3)         P4 Base Station           PC Relay           Frontend
-┌─────────────┐  ESP-NOW  ┌──────┐ UART 2Mbps ┌──────────┐  USB HS  ┌──────────┐  WS:8765  ┌───────────┐
-│ L/R Gloves  │──~2ms──→ │  C6  │───────────→│   P4     │────────→│ FastAPI  │────────→│ React+R3F │
-│ Tier1 CNN   │           └──────┘           │ Tier2    │         │ Tier3    │         │ 3D Hand   │
-│ 28-dim feat │                              │ LVGL+TTS │         │ ST-GCN   │         │ Skeleton  │
-└─────────────┘                              └──────────┘         │ NLP+TTS  │         └───────────┘
-                                                                  └──────────┘
+Current dev path (code-verified):
+Gloves (ESP32-S3)        P4 Base Station            PC Relay             Frontend
+┌─────────────┐ ESP-NOW  ┌──────┐ UART 2Mbps ┌──────────┐  USB CDC ┌──────────┐ WS:8765 ┌───────────┐
+│ L/R Gloves  │──69B───→ │  C6  │───────────→│   P4     │─────────→│ FastAPI  │────────→│ React+R3F │
+│ Tier1 CNN   │  (~2ms)  │relay │            │ Tier2    │  (JSON)  │ Tier3    │         │ 3D Hand   │
+│ (flex+IMU*  │          └──────┘            │ LVGL+TTS │          │ ST-GCN   │         │ Skeleton  │
+│  flex=ADC1) │                              └──────────┘          │ NLP+TTS  │         └───────────┘
+└─────────────┘                                                    └──────────┘
 Standalone mode (no PC): P4 runs Tier2 + LVGL display + TTS audio independently.
+
+* IMU fields currently zero (LSM6DSV16X driver pending); flex via internal ADC1 works.
+
+Planned (not yet implemented):
+  S3 ──UART 2Mbps──► P4 (direct, bypass C6)   ← V5.3 "wired dev" path, designed
+  C6 ──ESP-Hosted Wi-Fi/UDP──► P4             ← future production path
 ```
 
 ### Three-Tier Inference
 
-| Tier | Location | Model | Latency | Classes | Accuracy |
-|------|----------|-------|---------|---------|----------|
-| L1 (Edge) | ESP32-S3 glove | 1D-CNN+Attention | <3ms | ~20 | ~85% |
-| L2 (P4 Base Station) | ESP32-P4 | GatedBiCrossAttention | <30ms | 46 | ~90% |
-| L3 (PC) | Python relay | ST-GCN + MS-TCN | <50ms | 60+ | ~95% |
+| Tier | Location | Model | Latency | Classes |
+|------|----------|-------|---------|---------|
+| L1 (Edge) | ESP32-S3 glove | 1D-CNN+Attention | <3ms | 46 |
+| L2 (P4 Base Station) | ESP32-P4 | Gated Bi-CrossAttention (TFLite Micro) | <30ms | 46 |
+| L3 (PC) | Python relay | ST-GCN + MS-TCN | <50ms | 46+ |
 
-### V5.2 P4 Smart Base Station (NEW)
+### Core Constants (unchanged across V5→V6)
 
-- **C6 co-processor**: ESP-NOW relay from gloves → UART 2Mbps to P4
-- **P4 main processor**: Tier2 inference (TFLite Micro, ~80KB INT8) + 7" MIPI-DSI LVGL touchscreen + ES8311 TTS audio + USB 2.0 HS
-- **Standalone mode**: Works fully without PC — inference + display + audio on P4
+| Constant | Value |
+|----------|-------|
+| NUM_FLEX_SENSORS | 5 |
+| SINGLE_HAND_FEATURES | 11 (5 flex + 3 euler + 3 gyro) |
+| DUAL_HAND_FEATURES | 28 (L11 + R11 + Relative6) |
+| GlovePacket size | 69 bytes |
+| Sensor sampling rate | 100 Hz |
 
 ---
 
 ## Quick Start
+
+**One-command environment setup** (Ubuntu x64, CPU-only): see `docs/DEVELOPMENT_SETUP.md`, or in Claude Code run `/setup-env`.
 
 ### 1. Glove Firmware (ESP32-S3, PlatformIO)
 
@@ -44,34 +80,29 @@ cd glove_firmware
 pio run                    # Build
 pio run -t upload          # Upload to ESP32-S3
 pio device monitor         # Serial monitor (115200 baud)
-pio test                   # Run firmware tests
+pio test                   # Run firmware native tests
 ```
 
 ### 2. P4 Base Station (ESP-IDF v5.4+)
 
 ```bash
-# C6 co-processor
-cd glove_firmware/p4_base_station/c6_firmware
-idf.py set-target esp32c6
-idf.py build && idf.py -p /dev/ttyUSBx flash monitor
-
-# P4 main processor
+source scripts/activate_idf.sh                     # activate ESP-IDF (created by /setup-env)
 cd glove_firmware/p4_base_station/p4_firmware
 idf.py set-target esp32p4
-idf.py build && idf.py -p /dev/ttyUSBx flash monitor
+idf.py build && idf.py -p /dev/ttyACM0 flash monitor   # P4 main processor
 
-# P4 native tests
-cd glove_firmware/p4_base_station/tests
-pio test
+# Standalone verification (no C6/gloves needed):
+idf.py -DIDF_TARGET=esp32p4 -DCONFIG_P4_INTERNAL_MOCK=1 build   # internal mock data
 ```
+
+> **Note on C6**: The on-board ESP32-C6 is factory pre-flashed as an **ESP-Hosted Wi-Fi/BT co-processor** (SDIO). It does **not** support ESP-NOW pass-through. Do **not** flash the legacy `c6_firmware` mock-ESP-NOW bridge onto the EV board's C6 unless you intend to repurpose it. See `docs/superpowers/specs/2026-07-08-s3-p4-wired-uart-design.md`.
 
 ### 3. Python Relay (glove_relay)
 
 ```bash
-cd glove_relay
-pip install -r requirements.txt
-uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
-python -m pytest tests/    # Run relay tests
+conda run -n pytorch_env pip install -r glove_relay/requirements.txt  # or use environment.yml
+conda run -n pytorch_env uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+conda run -n pytorch_env python -m pytest glove_relay/tests/    # Run relay tests
 ```
 
 ### 4. Web Frontend (glove_web)
@@ -85,7 +116,7 @@ npm run build              # Production build
 
 ### 5. Unity Pro (glove_unity) — Windows Only
 
-Unity 2022.3 LTS + XR Hands package. See `glove_unity/README.md`.
+Unity 2022.3 LTS + XR Hands package. Open `glove_unity/` in Unity Hub (Windows).
 
 ---
 
@@ -93,40 +124,35 @@ Unity 2022.3 LTS + XR Hands package. See `glove_unity/README.md`.
 
 ### Gloves (ESP32-S3)
 
-| Component | Spec |
-|-----------|------|
-| MCU | ESP32-S3-DevKitC-1 N16R8 (8MB Flash + 8MB PSRAM) |
-| IMU | BNO085 (9-axis, address 0x4B) |
-| Flex sensors | 5x Spectra Symbol 2.2" (via 2x ADS1115 ADC) |
-| I2C | GPIO 8 (SDA), GPIO 9 (SCL), 400kHz, flat bus |
-| ADC addresses | ADS1115 #1: 0x48, ADS1115 #2: 0x49 |
-| Communication | ESP-NOW (~2ms latency) |
+| Component | Spec | Status |
+|-----------|------|--------|
+| MCU | ESP32-S3-DevKitC-1 N16R8 (8MB Flash + 8MB PSRAM) | ✅ |
+| IMU | LSM6DSV16X (6-axis, SFLP fusion) @ I2C 0x6A | 🟡 driver pending (IMU=zeros now) |
+| Flex sensors | 5× Spectra Symbol 2.2" → **internal ADC1** (GPIO1–5) | ✅ |
+| I2C | GPIO8 (SDA), GPIO9 (SCL), 400kHz — single device (LSM6DSV16X) | 🟡 |
+| Communication | ESP-NOW broadcast (current); wired UART (designed, pending) | ✅ / 🟡 |
+| **Removed (V6)** | ~~BNO085~~, ~~2× ADS1115~~, ~~TCA9548A MUX~~ | ❌ deprecated |
 
 ### P4 Smart Base Station
 
-| Component | Spec |
-|-----------|------|
-| Main MCU | ESP32-P4 (400MHz RV32 dual-core, 32MB PSRAM) |
-| Co-processor | ESP32-C6-MINI-1 (ESP-NOW + BLE 5.0) |
-| Display | 7" MIPI-DSI 1024x600 capacitive touch (GT911) |
-| Camera | OV2710 2MP MIPI-CSI (deferred) |
-| Audio | ES8311 codec + NS4150 speaker (I2S, 16kHz, 16-bit, mono) |
-| USB | USB 2.0 HS OTG (480Mbps) |
-| UART | C6→P4, 2Mbps, GPIO43→GPIO38 |
+| Component | Spec | Notes |
+|-----------|------|-------|
+| Main MCU | ESP32-P4 (400MHz RV32, 32MB PSRAM) | ESP32-P4-Function-EV-Board v1.5.2 |
+| Co-processor | ESP32-C6-MINI-1 | ESP-Hosted Wi-Fi/BT (factory FW), NOT an ESP-NOW relay |
+| Display | 7" MIPI-DSI 1024×600 capacitive touch (GT911) | ✅ verified |
+| Audio | ES8311 codec + NS4150 speaker (I2S, 16kHz/16-bit/mono) | ✅ init verified |
+| USB | USB 2.0 HS OTG (480Mbps) — P4→PC CDC | ✅ |
+| UART | S3/C6 → P4, 2Mbps, P4 GPIO37(TX)/GPIO38(RX) | ✅ |
 
 ---
 
-## Key Design Decisions
+## Tech Debt (pending cleanup — code, not docs)
 
-| Decision | Choice | Reason |
-|----------|--------|--------|
-| Flex sensors (V5) | Spectra Symbol 2.2" + ADS1115 | Mature, proven SLR approach |
-| Communication | ESP-NOW | ~2ms latency, no WiFi/BLE overhead |
-| Base station | ESP32-P4 + C6 | Competition board, standalone Tier2 inference |
-| L2 model | GatedBiCrossAttention | Dual-hand cross-attention for sign language |
-| Frontend | React + R3F (no Tauri/Rust) | Pure web, zero-install |
-| Model hot-switch | BaseModel + YAML config | Runtime switching without restart |
-| BLE | Provisioning only | No Web Bluetooth API (unstable) |
+Documented here per the "docs-only this round" decision (see `PROGRESS.md`):
+- `platformio.ini` `lib_deps` still lists `Adafruit BNO08x` + `NimBLE-Arduino` — no active source includes them (stale deps).
+- `glove_firmware/lib/Sensors/ADS1115Manager.h` exists but is unreferenced dead code.
+- `Sensors.h` / `Comms.h` aggregate-header comments still describe V5 (ADS1115/BNO085).
+- `data_structures.h` I2C comment "400kHz for 3 devices" is V5-stale (V6 = single device).
 
 ---
 
@@ -134,11 +160,10 @@ Unity 2022.3 LTS + XR Hands package. See `glove_unity/README.md`.
 
 | Component | Tests | Status |
 |-----------|-------|--------|
-| Firmware (native) | 64 | ✅ |
-| Receiver (native) | 12 | ✅ |
+| Firmware (native, incl. V6 ADC) | 38 | ✅ |
 | P4 base station (native) | 12 | ✅ |
-| Relay (pytest) | 80 | ✅ |
-| **Total** | **168** | **All pass** |
+| Relay (pytest) | varies (was 133→, see PROGRESS) | ✅ |
+| Web | build-only | ✅ |
 
 ---
 
@@ -147,19 +172,18 @@ Unity 2022.3 LTS + XR Hands package. See `glove_unity/README.md`.
 ```
 glove_firmware/          # ESP32-S3 glove firmware (PlatformIO)
 ├── src/                 # FreeRTOS tasks + main
-├── lib/                 # Sensors, Models, Comms, Filters
+├── lib/                 # Sensors (InternalADCManager, IFlexSensor...), Models, Comms, Filters
 ├── shared/              # uart_frame.h, p4_protocol.h
-├── receiver/            # S3 USB receiver (FramePairer)
-├── p4_base_station/     # V5.2 P4 smart base station
-│   ├── c6_firmware/     # C6 ESP-NOW relay (ESP-IDF)
-│   ├── p4_firmware/     # P4 Tier2 + LVGL + TTS + USB
+├── p4_base_station/     # P4 + C6 base station
+│   ├── c6_firmware/     # C6 ESP-NOW→UART relay (ESP-IDF) — see note above
+│   ├── p4_firmware/     # P4 Tier2 + LVGL + TTS + USB CDC (ESP-IDF)
 │   └── tests/           # Native tests
 └── scripts/             # Model export, calibration, TTS gen
-
 glove_relay/             # Python FastAPI relay server
 glove_web/               # React + R3F 3D hand skeleton
 glove_unity/             # Unity XR Hands (Windows)
-docs/                    # Specs, plans, references
+scripts/setup_env.sh     # One-shot Ubuntu x64 dev environment bootstrap
+docs/                    # Specs, plans, references (see docs/V6/, docs/superpowers/)
 ```
 
 ---
@@ -173,7 +197,6 @@ docs/                    # Specs, plans, references
 | L3 inference latency (PC) | <50ms |
 | End-to-end latency | <100ms |
 | Sensor sampling rate | 100Hz |
-| ESP-NOW latency | ~2ms |
 | GlovePacket size | 69 bytes |
 | Feature vector | 28-dim (L11 + R11 + Relative6) |
 
@@ -181,11 +204,13 @@ docs/                    # Specs, plans, references
 
 ## Documentation
 
-- **V5 Design Spec**: `docs/superpowers/specs/2026-06-01-v5-dual-glove-flex-design.md`
-- **V5.2 P4 Design Spec**: `docs/superpowers/specs/2026-06-10-v52-p4-base-station-design.md`
-- **Hardware Assembly**: `docs/HARDWARE_ASSEMBLY_GUIDE.md`
-- **Wiring Debug Guide**: `docs/HARDWARE_WIRING_DEBUG_GUIDE_DM40B.md`
-- **Research Papers**: `docs/references/`
+- **Dev environment**: `docs/DEVELOPMENT_SETUP.md` (one-command `/setup-env`)
+- **V6 design spec**: `docs/V6/04_SOP-SPEC-PLAN_V6.md`
+- **V6 internal ADC migration**: `docs/V6/07_internal_adc_migration.md`
+- **Wiring diagrams**: `docs/V6/03_wiring_diagram.md`
+- **Wired UART design (V5.3)**: `docs/superpowers/specs/2026-07-08-s3-p4-wired-uart-design.md`
+- **Cross-session progress**: `PROGRESS.md` (authoritative), `PROGRESS_CN.md` (summary)
+- **Historical (V3–V5.2)**: `docs/archive/`
 
 ---
 

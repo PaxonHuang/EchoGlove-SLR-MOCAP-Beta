@@ -23,31 +23,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Design**: `docs/superpowers/specs/2026-07-08-s3-p4-wired-uart-design.md`
 - **Plan**: `docs/superpowers/plans/2026-07-09-s3-p4-wired-uart.md`
 - **Wiring**: S3 GPIO6 (TX) → P4 GPIO38 (RX) + GND (see `docs/V6/03_wiring_diagram.md` §5)
-- **S3 firmware**: ESP-NOW + UART parallel TX (compile flag `WIRED_UART=1`); UART is wired fallback
-- **P4 firmware**: `uart_receiver` (UART0, GPIO37 TX / GPIO38 RX, 2Mbps) already complete; standalone verified via `CONFIG_P4_INTERNAL_MOCK=y` (commit `4f541bb`)
+- **S3 firmware (current, code-verified 2026-07-10)**: ESP-NOW broadcast (`esp_now_send`, 69B GlovePacket) is the active comm path. The wired UART (`WIRED_UART`) path is **designed but not yet implemented** — the compile flag does not exist in code yet. See `docs/superpowers/specs/2026-07-08-s3-p4-wired-uart-design.md`.
+- **IMU (current)**: **zeros**. BNO085 path removed from active code; LSM6DSV16X driver does **not exist yet** (`SensorManager.h` TODO). Only Flex internal-ADC migration has landed.
+- **P4 firmware**: `uart_receiver` (UART0, GPIO37 TX / GPIO38 RX, 2Mbps) receives from C6; output via USB CDC. Standalone verified via `CONFIG_P4_INTERNAL_MOCK=y` (commit `4f541bb`)
 - **C6**: NOT flashed; stays as factory ESP-Hosted co-processor. Flash via PROG_C6 + CH340 only if a custom app is needed (P4 must be in bootloader mode first). See memory `p4-ev-board-c6-esp-hosted`.
 
 **Verification status (2026-07-08)**: P4 standalone verified — LVGL display + TFLite stub + ES8311 audio init + TinyUSB CDC init all PASS. A3 hardware verification complete (commit `4f541bb`). Track B (mock relay→browser E2E) complete (commit `3cf2f3a`).
 
 ---
 
-## V5.2 DualGloveFlex + P4 Base Station (2026-06-01)
-- Branch: V5-DualGloveFlex
+## V5.2 DualGloveFlex + P4 Base Station (2026-06-01, historical)
+> **Historical reference** — V5/V5.2 used BNO085 + ADS1115 + ESP-NOW→C6→UART→P4. V6 migration supersedes the sensor/ADC/comm picks; see V6 docs + System Status. Design specs retained under `docs/superpowers/` for history.
+- Branch: V5-DualGloveFlex (historical)
 - V5 Spec: docs/superpowers/specs/2026-06-01-v5-dual-glove-flex-design.md
 - V5.2 Spec: docs/superpowers/specs/2026-06-10-v52-p4-base-station-design.md
-- Architecture: 2x ESP32-S3 gloves + C6 ESP-NOW relay + P4 smart base station (Tier2 + LVGL + TTS)
-- Test Status (2026-06-22): 168/168 pass + BNO085 sensor data verified + ADS1115 I2C detection verified (0x48, 0x49)
-- V5.2 P4 Base Station: 8/8 tasks done (commits f4e4d34..bef0c96), ready for hardware
+- V5.2 P4 Base Station: 8/8 tasks code-complete (commits f4e4d34..bef0c96)
 
-### V5 Constants
-| Constant | Value |
-|----------|-------|
-| NUM_FLEX_SENSORS | 5 |
-| SINGLE_HAND_FEATURES | 11 (5 flex + 3 euler + 3 gyro) |
-| DUAL_HAND_FEATURES | 28 (L11 + R11 + Relative6) |
-| GlovePacket size | 69 bytes |
-| ESP-NOW latency | ~2ms |
-| I2C topology | Flat bus (no MUX): BNO085@0x4B + ADS1115@0x48 + ADS1115@0x49 |
+### V5/V6 Shared Constants (unchanged across migration)
+| Constant | Value | V6 status |
+|----------|-------|-----------|
+| NUM_FLEX_SENSORS | 5 | ✅ via internal ADC1 |
+| SINGLE_HAND_FEATURES | 11 (5 flex + 3 euler + 3 gyro) | ✅ flex; euler/gyro=0 (IMU pending) |
+| DUAL_HAND_FEATURES | 28 (L11 + R11 + Relative6) | ✅ (structure) |
+| GlovePacket size | 69 bytes | ✅ |
+| ESP-NOW latency | ~2ms | ✅ (current S3 comm) |
+| I2C topology | V6: single device LSM6DSV16X@0x6A (GPIO8/9, 400kHz) | 🟡 driver not implemented, no I2C active in build yet. (V5 was BNO085@0x4B + ADS1115@0x48/0x49, all deprecated) |
 
 ---
 
@@ -59,7 +59,7 @@ When I provide detailed specs or explicit instructions for project initializatio
 
 ## Project Context
 
-ESP32-S3 data glove + ESP32-P4 smart base station for hand sign recognition. Key components: BNO085 IMU, 5x flex sensors (via ADS1115), dual-hand support. 3-tier inference: L1 edge (S3 glove), L2 base station (P4 Tier2), L3 PC (ST-GCN). When continuing work, check `PROGRESS.md` before restarting from scratch.
+ESP32-S3 data glove + ESP32-P4 smart base station for hand sign recognition. **Current components (V6, code-verified 2026-07-10)**: 5x flex sensors via ESP32-S3 internal ADC1 (implemented); IMU = LSM6DSV16X (designed, **driver not implemented — IMU output zeros**); comm = ESP-NOW broadcast (implemented). BNO085/ADS1115 deprecated (dead code/lib_deps). 3-tier inference: L1 edge (S3 glove), L2 base station (P4 Tier2), L3 PC (ST-GCN). When continuing work, check `PROGRESS.md` before restarting from scratch.
 
 ---
 
@@ -76,7 +76,7 @@ ESP32-S3 data glove + ESP32-P4 smart base station for hand sign recognition. Key
 
 **Key Decisions**:
 - **No Rust/Tauri**: V5 uses pure Web (React + R3F), no desktop framework
-- **Python Relay**: Unified hub for UDP/USB→WebSocket conversion + L2 inference
+- **Python Relay**: Unified hub for P4 USB CDC / historical UDP → WebSocket conversion + L2/3 inference
 - **Model Hot-Switch**: BaseModel interface + YAML config switching
 - **BLE for Provisioning Only**: Frontend uses WiFi→Relay→WebSocket
 
@@ -99,9 +99,9 @@ ESP32-S3 data glove + ESP32-P4 smart base station for hand sign recognition. Key
 ├── glove_web/               # React + R3F frontend
 ├── glove_unity/             # Unity L3 Pro skeleton
 ├── docs/
-│   ├── superpowers/         # V5/V5.2 design specs + implementation plans
-│   ├── V5.0DualGloveFlex/   # V5.2 reference docs (GLM)
-│   ├── archive/             # Historical docs (v3, v5-ai-drafts)
+│   ├── superpowers/         # V5/V5.2/V6 design specs + implementation plans
+│   ├── V6/                  # V6 LSM6DSV16X + internal-ADC design package (01–07)
+│   ├── archive/             # Historical docs (v3, v5-ai-drafts, V5.0DualGloveFlex, AGENTS, ONBOARDING)
 │   ├── references/          # PDF datasheets, research papers
 │   └── notebooks/           # Jupyter notebooks (data, training)
 └── CLAUDE.md
@@ -215,24 +215,30 @@ ESP32 平台版本 `espressif32@^6.5.0`，新版编译器更严格：
 
 | Task | Core | Priority | Frequency | Purpose |
 |------|------|----------|-----------|---------|
-| Task_SensorRead | 1 | 3 | 100Hz | I2C sampling + Kalman filter |
+| Task_SensorRead | 1 | 3 | 100Hz | ADC1 flex sampling + Kalman filter (IMU=zeros, LSM6DSV16X pending) |
 | Task_Inference | 0 | 2 | ~30Hz | L1 model inference |
-| Task_Comms | 0 | 1 | 100Hz | BLE provisioning + UDP send |
+| Task_Comms | 0 | 1 | 100Hz | ESP-NOW broadcast (UDP send is V5-historical, not active) |
 
 ---
 
-## Data Flow
+## Data Flow (current, code-verified 2026-07-10)
 
 ```
 Gloves (S3)              P4 Base Station            PC Relay             Frontend
-┌─────────────┐  ESP-NOW  ┌──────┐ UART 2Mbps ┌──────────┐  USB HS  ┌──────────┐  WS:8765  ┌───────────┐
-│ L/R Gloves  │──~2ms──→│  C6  │───────────→│   P4     │────────→│ FastAPI  │────────→│ React+R3F │
-│ Tier1 CNN   │           └──────┘           │ Tier2    │         │ Tier3    │         │ 3D Hand   │
-│ 28-dim feat │                              │ LVGL+TTS │         │ ST-GCN   │         │ Skeleton  │
-└─────────────┘                              └──────────┘         │ NLP+TTS  │         └───────────┘
-                                                                  └──────────┘
+┌─────────────┐  ESP-NOW  ┌──────┐ UART 2Mbps ┌──────────┐  USB CDC ┌──────────┐  WS:8765  ┌───────────┐
+│ L/R Gloves  │──69B───→│  C6  │───────────→│   P4     │─────────→│ FastAPI  │────────→│ React+R3F │
+│ Tier1 CNN   │  (current│relay │ (73B frame)│ Tier2    │  (JSON)  │ Tier3    │         │ 3D Hand   │
+│ flex=ADC1✅ │  comm)   └──────┘            │ LVGL+TTS │          │ ST-GCN   │         │ Skeleton  │
+│ IMU =zero 🟡│                              └──────────┘          │ NLP+TTS  │         └───────────┘
+└─────────────┘                                                    └──────────┘
 Standalone mode (no PC): P4 runs Tier2 + LVGL display + TTS audio independently.
+
+Planned (NOT yet in code):
+  S3 ──direct UART 2Mbps──► P4   (bypass C6; "V5.3 wired dev" path — WIRED_UART flag not implemented)
+  C6 ──ESP-Hosted Wi-Fi/UDP──► P4  (future production)
 ```
+
+**Note**: The C6→P4 UART relay path above is the designed chain, but the on-board C6 is an ESP-Hosted co-processor that **cannot run** the `c6_firmware` ESP-NOW bridge. Until the wired-UART (S3→P4 direct) path is implemented in firmware, the only end-to-end-verified path is **P4 standalone with internal mock data** (`CONFIG_P4_INTERNAL_MOCK=y`).
 
 ---
 
@@ -261,36 +267,28 @@ Standalone mode (no PC): P4 runs Tier2 + LVGL display + TTS audio independently.
 
 ---
 
-## Hardware Context
+## Hardware Context (V6, code-verified 2026-07-10)
 
 - **Glove MCU**: ESP32-S3-DevKitC-1 N16R8 (8MB Flash + 8MB PSRAM)
-- **Base Station**: ESP32-P4 (400MHz RV32, 32MB PSRAM) + ESP32-C6-MINI-1 co-processor
-- **I2C**: GPIO 8 (SDA), GPIO 9 (SCL), 400kHz — flat bus: BNO085@0x4B + ADS1115@0x48 + ADS1115@0x49
-- **Sensors**: BNO085 IMU (address 0x4B), 5x flex sensors (via 2x ADS1115 ADC)
-- **V5 removed components**: TMAG5273 (Hall sensor), TCA9548A (I2C MUX) — see `docs/archive/v3/` for historical wiring
+- **Base Station**: ESP32-P4 (400MHz RV32, 32MB PSRAM) + ESP32-C6-MINI-1 (ESP-Hosted co-processor)
+- **IMU**: LSM6DSV16X @ I2C 0x6A (GPIO8 SDA / GPIO9 SCL, 400kHz) — 🟡 **driver not implemented**, IMU output currently zeros
+- **Flex**: 5× flex sensors → **ESP32-S3 internal ADC1** (GPIO1–5), N=16 oversample, NVS calibration ✅
+- **Comm**: S3 ESP-NOW broadcast (current, ✅); wired UART S3→P4 GPIO6→GPIO38 (designed, 🟡 not implemented)
+- **Deprecated**: ~~BNO085~~, ~~2× ADS1115 (0x48/0x49)~~, ~~TCA9548A MUX~~, ~~TMAG5273~~ — see `docs/archive/`
 
-### BNO085 Wiring (ESP32-S3-DevKitC-1 N16R8)
+### LSM6DSV16X Wiring (V6 target — see `docs/V6/03_wiring_diagram.md` §2 for full table)
 
-| BNO085 Pin | ESP32-S3 Pin | Notes |
-|------------|--------------|-------|
-| VCC | 3.3V | **NOT 5V!** |
-| GND | GND | |
-| SDA | GPIO8 | 4.7kΩ pull-up to 3.3V |
-| SCL | GPIO9 | 4.7kΩ pull-up to 3.3V |
-| CS | 3.3V | HIGH for I2C mode |
-| PS0 | GND | **GND=I2C, 3.3V=SPI** |
-| PS1 | GND | Must be GND |
-| ADO | 3.3V | HIGH=0x4B, LOW=0x4A |
-| RST | GPIO10 | Optional: 3.3V if not needed |
-| INT | Floating | Not used |
+| LSM6DSV16X Pin | ESP32-S3 Pin | Notes |
+|----------------|--------------|-------|
+| VDD / VDDIO | 3.3V | **NOT 5V!** (1.71–3.6V) |
+| GND (pin4+13) | GND | both GND pins |
+| SDA/SDI | GPIO8 | 4.7kΩ pull-up |
+| SCL/SCLK | GPIO9 | 4.7kΩ pull-up |
+| SDO/SA0 | GND | LOW=0x6A, HIGH=0x6B |
+| CS | 3.3V | HIGH=I2C mode |
+| INT1 | GPIO10 | optional data-ready |
 
-**Critical Notes:**
-- PS0/PS1 are latched at power-up. PS0=3.3V selects SPI mode and can damage the module!
-- GPIO8/9 works on N16R8 (unlike N8 variant where GPIO8/9 conflict with internal flash)
-- Adafruit BNO08x v1.2.5 uses `begin_I2C()` not `begin()`
-- `sh2_SensorValue_t` uses `.sensorId` not `.type`
-- BNO085 needs power cycle for clean initialization (fails if in "hot" state)
-- RST pin has strong internal pull-up — GPIO10 cannot pull LOW, use power cycle instead
+> **BNO085 wiring is historically retained** in `docs/V6/03_wiring_diagram.md` §8.4 (migration reference). BNO085 is no longer in active code; key legacy gotcha: PS0/PS1 latched at power-up, PS0=3.3V selects SPI and can damage the module.
 
 ---
 
@@ -307,21 +305,23 @@ Standalone mode (no PC): P4 runs Tier2 + LVGL display + TTS audio independently.
 
 ---
 
-## Development Phases
+## Development Phases (V5/V6 migration timeline)
 
 | Phase | Name | Status |
 |-------|------|--------|
-| P0 | Project init (PlatformIO + React + FastAPI) | Done |
-| P1 | HAL & drivers (BNO085, ADS1115) | Done |
-| P2 | Signal processing (Kalman filter, normalization, sliding window) | Done |
-| P3 | L1 Edge Inference — Edge Impulse MVP (path A) | Done |
-| P4 | Communication (BLE provisioning + WiFi UDP) | Done |
-| P5 | Python Relay + L2 ST-GCN + NLP + TTS | Done (tests 88/88) |
-| P6 | Web rendering (React + R3F) / Unity Pro | Done |
-| V5 | DualGloveFlex migration (flex sensors, dual-hand, 3-tier) | Done |
+| P0–P6 | V5 pipeline (HAL, signal, L1, comm, relay, web) | Done (historical) |
+| V5 | DualGloveFlex (flex sensors, dual-hand, 3-tier) | Done |
 | V5.2 | P4 Smart Base Station (C6 + P4 + LVGL + TTS) | **Done (code)** |
+| V6.0 | LSM6DSV16X + internal-ADC migration | 🟡 In progress (see below) |
 
-**Next**: Hardware testing — flash C6→verify ESP-NOW, flash P4→verify UART data flow. See `PROGRESS.md` for details.
+**V6 implementation status (code-verified 2026-07-10)**:
+- ✅ Flex: internal ADC1 (GPIO1–5) + `IFlexSensor` + NVS calibration — landed
+- ✅ S3 ESP-NOW broadcast, P4 UART RX + USB CDC, P4 standalone mock-verified
+- 🟡 LSM6DSV16X driver — **not implemented** (IMU=zeros); BNO085 removed from active code
+- 🟡 Wired UART (S3→P4 direct) — designed (`WIRED_UART` flag not in code yet)
+- ❌ Deprecated: BNO085, ADS1115 (dead code), TMAG5273, TCA9548A
+
+**Next**: implement LSM6DSV16X driver → implement wired UART path → on-device verification. See `PROGRESS.md` for checkpoints + tech-debt cleanup list.
 
 ---
 
@@ -331,7 +331,7 @@ Standalone mode (no PC): P4 runs Tier2 + LVGL display + TTS audio independently.
 - **V5 Plan**: `docs/superpowers/plans/2026-06-01-v5-dual-glove-flex.md`
 - **V5.2 P4 Design Spec**: `docs/superpowers/specs/2026-06-10-v52-p4-base-station-design.md`
 - **V5.2 P4 Plan**: `docs/superpowers/plans/2026-06-10-v52-p4-base-station.md`
-- **V5.2 Reference Docs**: `docs/V5.0DualGloveFlex/` (GLM generated)
+- **V5.2 Reference Docs (GLM)**: `docs/archive/v5-ai-drafts/V5.0DualGloveFlex/` (archived, non-authoritative)
 - **Historical (V3/V4/V5 drafts)**: `docs/archive/`
 
 ---
@@ -348,7 +348,7 @@ Invoke with `/agent esp32-firmware-engineer` for firmware tasks.
 
 ## Project Dependencies
 
-- BNO085 driver is a LOCAL driver included in the firmware repo, NOT a PlatformIO registry library. Do not search PlatformIO registry for it.
+- BNO085 is deprecated. The V6 IMU (LSM6DSV16X) driver will be a LOCAL driver in the firmware repo, NOT a PlatformIO registry library. Check `lib/` first before searching the registry for any dependency.
 - For any dependency, check the project's existing `lib/` directory first before assuming it needs to be installed from a registry.
 
 ---
@@ -369,10 +369,10 @@ After modifying any source file in this project, always run `pio run` to verify 
 ### Firmware (`glove_firmware/lib/`)
 | Directory | Purpose |
 |-----------|---------|
-| `Sensors/` | BNO085 IMU driver, ADS1115 ADC, FlexSensorManager |
+| `Sensors/` | `InternalADCManager` (✅), `IFlexSensor`, `FlexManager`, `SensorManager` (IMU=zeros); legacy `ADS1115Manager.h` (dead code) |
 | `Models/` | BaseModel interface, TFLiteModel, ModelRegistry |
-| `Comms/` | BLEManager, UDPTransmitter, Protobuf |
-| `Filters/` | Kalman filter implementations |
+| `Comms/` | `ESPNOWTransmitter.h` (test stub); production uses `esp_now_send` directly in main.cpp |
+| `Filters/` | KalmanFilter1D, SlidingWindow, FeatureNormalizer (Madgwick not yet implemented) |
 
 ### Relay (`glove_relay/src/`)
 | Module | Purpose |
@@ -416,15 +416,12 @@ Context7 and Espressif Docs failures are proxy-related (`127.0.0.1:15721`), not 
 
 - Session continuation `.txt` files in project root are ephemeral — can be deleted
 - **WebSocket Port**: Relay uses port **8765** for WebSocket (not 8000)
-- **UDP Port**: ESP32 sends to port **8888** (configured in `platformio.ini`)
+- **UDP Port 8888**: V5-historical (S3→PC direct UDP). Not active in V6; `CONFIG_UDP_PORT=8888` flag remains in platformio.ini but has no runtime impl. Current path is P4→USB CDC→relay.
 - **Relay Host**: Web frontend connects to `ws://${relayHost}:8765` — default is `localhost`
 - **File line endings**: Managed by `.gitattributes` — LF for all source, CRLF only for Windows scripts
-- **P4 UART**: C6→P4 uses 2Mbps UART with CRC-16/MODBUS. Frame: `[0xAA 0x55 69-byte payload CRC16_L CRC16_H]` = 73 bytes
+- **P4 UART**: C6/S3→P4 uses 2Mbps UART with CRC-16/MODBUS. Frame: `[0xAA 0x55 69-byte payload CRC16_L CRC16_H]` = 73 bytes. P4 RX=GPIO38, TX=GPIO37.
 - **P4 vs S3 builds**: P4/C6 use ESP-IDF (`idf.py`), S3 gloves use PlatformIO (`pio`) — different build systems
-- **BNO085 PS0/PS1**: PS0/PS1 are latched at power-up. PS0=3.3V selects SPI mode and can damage the module! Always connect PS0=GND for I2C mode.
-- **BNO085 RST**: RST pin has strong internal pull-up. GPIO10 cannot pull LOW. Use power cycle (disconnect VCC 10s) to reset.
-- **BNO085 init**: Adafruit library fails if BNO085 is in "hot" state. Always power cycle before initializing.
-- **BNO085 GPIO8/9**: Works on N16R8 (unlike N8 variant where GPIO8/9 conflict with internal flash)
+- **IMU = zeros (current)**: LSM6DSV16X driver not implemented yet. `SensorManager.readHardware()` zeroes quaternion/euler/gyro. BNO085 path removed from active code (lib_deps entry stale — see Tech Debt in README).
 
 ## Testing
 
