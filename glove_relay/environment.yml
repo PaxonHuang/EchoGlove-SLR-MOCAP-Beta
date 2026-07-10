@@ -1,0 +1,28 @@
+# EchoGlove Relay + ST-GCN training/inference environment (CPU-only, Ubuntu x64).
+# Recreate with:  conda env create -f glove_relay/environment.yml
+# Update with:     conda env update -f glove_relay/environment.yml --prune
+#
+# Pinned to Python 3.10 (>=3.9 relay-compat, avoids 3.12 wheel gaps for some deps).
+# CPU torch keeps the env lightweight and CUDA-free per project requirement.
+name: pytorch_env
+channels:
+  - pytorch
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  # CPU-only PyTorch stack (CUDA intentionally omitted for portability)
+  - pytorch=2.*=cpu*         # constraint form; conda resolves latest cpu build
+  - torchvision=*=cpu*
+  - cpuonly
+  # Scientific stack shared with relay
+  - numpy>=1.24
+  - scikit-learn>=1.3
+  - matplotlib>=3.7
+  - pyyaml>=6.0.1
+  - pip:
+      - -r requirements.txt   # relay server deps (fastapi/uvicorn/websockets/edge-tts/...)
+      # training-only extras not in relay requirements.txt
+      - pandas>=2.0
+      - tqdm>=4.66
+      - tensorboard>=2.15

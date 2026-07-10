@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Quick Environment Setup (Ubuntu x64, CPU-only)
+
+**One command in Claude Code → `/setup-env`** (or `./scripts/setup_env.sh` in shell). Idempotent, detect-first: only installs missing tools, never clobbers existing installs. Stages: base-os / conda / node / platformio / esp-idf / relay / web / verify.
+
+- Full guide: `docs/DEVELOPMENT_SETUP.md`
+- Conda envs (declarative): `glove_relay/environment.yml` (`pytorch_env`) + `glove_relay/environment_tf.yml` (`tf_env`), both CPU-only
+- ESP-IDF activate per-shell: `source scripts/activate_idf.sh` (IDF v5.4, P4 BSP requirement)
+- Lightweight shortcut (skip the ~2GB IDF): `./scripts/setup_env.sh --relay --web`
+- **New collaborators**: after clone, run `/setup-env`, then read `PROGRESS.md` for current state. Personal tokens go in gitignored `.claude/settings.local.json`.
+
 ## V5.3 Wired Dev Path — S3→P4 Direct UART (2026-07-09, ACTIVE)
 
 **Architecture pivot**: The on-board C6 on the P4 EV Board is an **ESP-Hosted Wi-Fi/BT co-processor** (SDIO bus, factory pre-flashed slave firmware v0.0.6). ESP-Hosted does **NOT support ESP-NOW** pass-through. The original `c6_firmware` mock-ESP-NOW bridge is incompatible with this hardware.
