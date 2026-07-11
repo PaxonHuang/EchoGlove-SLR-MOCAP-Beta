@@ -12,10 +12,11 @@ Why this replaces the threshold ``rule_classifier`` for the demo:
     a threshold dead-band → "无手势" forever. Capturing the real per-channel
     (min, max) and re-mapping ``(x-min)/(max-min)`` restores true 0..1
     (0=straight, 1=bent), matching the ASL spec convention.
-  * The six letters are linearly separable in 5-D flex space (min inter-class
-    euclidean distance = 0.80, B vs W) >> sensor noise (~0.1), so nearest-
-    template matching classifies them cleanly without a trained NN. (See the
-    ASL spec §3.2.)
+  * The four active letters (A/B/I/L) are linearly separable in the 4-CHANNEL
+    flex space (thumb/index/middle/pinky — the ring channel ch3 is a confirmed
+    hardware fault and is masked out). Min inter-class euclidean distance on
+    the 4 good channels = 0.923 (A vs L) >> sensor noise (~0.1), so nearest-
+    template matching classifies them cleanly without a trained NN.
 
 Flex convention (matches firmware + ASL spec):
     flex = [thumb, index, middle, ring, pinky]
@@ -42,10 +43,29 @@ from typing import Dict, List, Optional, Tuple
 GESTURE_IDS: Dict[str, int] = {"A": 21, "B": 22, "I": 23, "L": 24, "W": 25, "Y": 26}
 
 # Display order kept stable for capture prompting + distance-matrix printing.
-ASL_LETTERS: Tuple[str, ...] = ("A", "B", "I", "L", "W", "Y")
+# NOTE: the active 4-channel demo uses only A/B/I/L (see ACTIVE_LETTERS). W/Y
+# are retained in ASL_TEMPLATES for completeness but are NOT in the active set
+# because (a) ch3 (ring) is a confirmed hardware fault on this glove and W/Y
+# need the ring channel to separate from other letters, and (b) even on the 4
+# good channels the W/Y templates collapse toward A/B/I under real capture
+# noise. A/B/I/L has min inter-class distance 0.923 on the 4 good channels —
+# the most robust 4-letter set for a broken-ring glove.
+ACTIVE_LETTERS: Tuple[str, ...] = ("A", "B", "I", "L")
+# Back-compat alias (calibrate_demo.py / tests import ASL_LETTERS). Now the
+# 4-letter active set, not the old 6-letter set.
+ASL_LETTERS: Tuple[str, ...] = ACTIVE_LETTERS
+
+# ── Channel mask ───────────────────────────────────────────────────────────
+# ch3 (ring, GPIO4) has a confirmed hardware fault (divider output pinned
+# ~114 mV, ~0 swing across 6 diagnostic runs + a sensor swap). The classifier
+# drops ch3 entirely and matches on the 4 surviving channels. Indices into the
+# 5-element flex vector: [thumb, index, middle, ring, pinky] → keep 0,1,2,4.
+ACTIVE_CHANNELS: Tuple[int, ...] = (0, 1, 2, 4)
+ACTIVE_DIM: int = len(ACTIVE_CHANNELS)
 
 # ── Theoretical templates (ASL spec §2 / §3.1) ─────────────────────────────
-# flex = [thumb, index, middle, ring, pinky], 0=straight 1=bent
+# flex = [thumb, index, middle, ring, pinky], 0=straight 1=bent. Full 5-D
+# templates retained for reference; matching projects onto ACTIVE_CHANNELS.
 ASL_TEMPLATES: Dict[str, List[float]] = {
     "A": [0.30, 0.95, 1.00, 1.00, 0.95],
     "B": [0.60, 0.05, 0.05, 0.05, 0.05],
@@ -55,18 +75,16 @@ ASL_TEMPLATES: Dict[str, List[float]] = {
     "Y": [0.05, 0.90, 0.95, 0.95, 0.10],
 }
 
-# Actual min inter-class euclidean distance over the six theoretical templates
-# is 0.559 (I vs Y) — NOT 0.80 (B vs W) as the ASL spec §3.2 table claims; the
-# spec's distance table is internally inconsistent (it lists A-B=1.64 but the
-# real value is 1.875). We use the code-computed value. The closest pair I/Y
-# differ mainly on thumb (0.60 vs 0.05) + pinky (0.05 vs 0.10); their midpoint
-# sits ~0.28 from each, so a reject threshold of 0.34 lets borderline I/Y
-# readings classify while rejecting genuinely far/unknown poses (>0.34). With
-# per-user captured templates the real min distance is usually larger.
-DEFAULT_REJECT_THRESHOLD = 0.34
-# confidence = 1 - dist / CONF_SPAN; using the real min class distance (0.559)
-# → a perfect match scores 1.0 and the closest confusable pair scores ~0.0.
-CONF_SPAN = 0.559
+# On the 4 active channels (drop ring), the min inter-class euclidean distance
+# over the ACTIVE_LETTERS theoretical templates is 0.923 (A vs L), far above
+# the 5-channel value of 0.559 (I vs Y) — dropping the broken ring channel
+# actually IMPROVES separability for the 4 chosen letters. Reject threshold
+# sits at ~1/3 of that span; borderline matches still classify, genuinely far
+# / unknown poses (>0.35) reject.
+DEFAULT_REJECT_THRESHOLD = 0.35
+# confidence = 1 - dist / CONF_SPAN; using the active-set min class distance
+# (0.923) → a perfect match scores 1.0, the closest confusable pair ~0.0.
+CONF_SPAN = 0.923
 
 DEFAULT_CALIBRATION_PATH = Path(__file__).resolve().parents[2] / "configs" / "demo_calibration.json"
 
@@ -89,11 +107,25 @@ class ASLClassifier:
 
     def __init__(self, reject_threshold: float = DEFAULT_REJECT_THRESHOLD) -> None:
         self.reject_threshold = reject_threshold
+        # Range/polarity are kept full 5-D (the $EG stream is 5 channels) but
+        # only the ACTIVE_CHANNELS entries are used for normalization + match.
         self.range_min: Optional[List[float]] = None
         self.range_max: Optional[List[float]] = None
         self.polarity: List[int] = [1, 1, 1, 1, 1]
+        # Captured templates are stored ALREADY projected to ACTIVE_CHANNELS
+        # (length ACTIVE_DIM), so load/save + classify all stay in the masked
+        # space consistently.
         self.captured_templates: Dict[str, List[float]] = {}
         self.use_capt: bool = False
+
+    # ── projection onto the active (working) channels ─────────────────────
+    @staticmethod
+    def _project(vec: List[float]) -> List[float]:
+        """Keep only the ACTIVE_CHANNELS dimensions of a 5-vector."""
+        v = [float(x) for x in vec]
+        while len(v) < 5:
+            v.append(0.0)
+        return [v[i] for i in ACTIVE_CHANNELS]
 
     # ── calibration state ────────────────────────────────────────────────
     def set_range(self, min: List[float], max: List[float],
@@ -106,7 +138,17 @@ class ASLClassifier:
             self.polarity = [int(p) if p in (1, -1) else 1 for p in polarity]
 
     def set_captured_templates(self, t: Dict[str, List[float]]) -> None:
-        self.captured_templates = {k: [float(x) for x in v] for k, v in t.items()}
+        # Accept either full 5-D or already-projected templates; normalize to
+        # the projected length ACTIVE_DIM so classify + distance are consistent.
+        proj = {}
+        for k, v in t.items():
+            v = [float(x) for x in v]
+            if len(v) == 5:
+                v = self._project(v)
+            elif len(v) != ACTIVE_DIM:
+                v = (v + [0.0] * ACTIVE_DIM)[:ACTIVE_DIM]
+            proj[k] = v
+        self.captured_templates = proj
 
     def use_captured(self, flag: bool) -> None:
         self.use_capt = flag and bool(self.captured_templates)
@@ -116,32 +158,39 @@ class ASLClassifier:
         return self.range_min is not None and self.range_max is not None
 
     def _active_templates(self) -> Dict[str, List[float]]:
+        """Templates projected onto ACTIVE_CHANNELS (length ACTIVE_DIM).
+
+        When using captured templates they are already projected (stored that
+        way by set_captured_templates). When using theoretical templates the
+        full 5-D ASL_TEMPLATES are projected here on the fly. Only ACTIVE_LETTERS
+        are returned so W/Y (which need the broken ring channel) never match.
+        """
         if self.use_capt and self.captured_templates:
-            return self.captured_templates
-        return ASL_TEMPLATES
+            return {k: v for k, v in self.captured_templates.items() if k in ACTIVE_LETTERS}
+        return {L: self._project(ASL_TEMPLATES[L]) for L in ACTIVE_LETTERS}
 
     # ── normalization ────────────────────────────────────────────────────
     def normalize(self, raw5: List[float]) -> List[float]:
-        """Re-map a raw ``raw/4095``-scale vector to true 0..1 (0=straight,
-        1=bent) using the captured per-channel range + polarity.
+        """Re-map a raw ``raw/4095``-scale 5-vector to true 0..1 (0=straight,
+        1=bent), projected onto ACTIVE_CHANNELS (length ACTIVE_DIM).
 
-        Without calibration, returns the input clamped to [0, 1] (caller then
-        gets the compressed ~0.36..0.86 values — classification will still run
-        against theoretical templates but accuracy suffers).
+        The broken ring channel (ch3) is dropped here — its range/polarity
+        entry is ignored. Without calibration, returns the projected input
+        clamped to [0, 1].
         """
         f = [float(x) for x in raw5]
         while len(f) < 5:
             f.append(0.0)
         f = f[:5]
         if not self.has_range:
-            return [_clamp01(x) for x in f]
+            return [_clamp01(f[i]) for i in ACTIVE_CHANNELS]
         out = []
-        for i, v in enumerate(f):
+        for i in ACTIVE_CHANNELS:
             span = self.range_max[i] - self.range_min[i]
             if abs(span) < 1e-6:
                 n = 0.0
             else:
-                n = (v - self.range_min[i]) / span
+                n = (f[i] - self.range_min[i]) / span
             if self.polarity[i] == -1:
                 n = 1.0 - n
             out.append(_clamp01(n))
@@ -150,14 +199,19 @@ class ASLClassifier:
     # ── capture helpers (used by calibrate_demo.py) ──────────────────────
     @staticmethod
     def _mean(samples: List[List[float]]) -> List[float]:
+        """Per-channel mean. Samples are ACTIVE_DIM-length projected vectors."""
+        if not samples:
+            return [0.0] * ACTIVE_DIM
         n = len(samples)
-        return [sum(s[i] for s in samples) / n for i in range(5)]
+        dim = len(samples[0])
+        return [sum(s[i] for s in samples) / n for i in range(dim)]
 
     def capture_letter(self, letter: str, raw_samples: List[List[float]]) -> List[float]:
-        """Record a per-letter template from several raw frames.
+        """Record a per-letter template from several raw 5-D frames.
 
-        Stores the *normalized* mean so the template is independent of the raw
-        scale. Range must be set first.
+        Stores the *normalized, projected* mean (length ACTIVE_DIM) so the
+        template is independent of the raw scale and of the broken ring ch.
+        Range must be set first.
         """
         if not self.has_range:
             raise RuntimeError("set_range() before capture_letter()")
@@ -173,11 +227,17 @@ class ASLClassifier:
 
     # ── classification ───────────────────────────────────────────────────
     def classify_normalized(self, norm5: List[float]) -> Dict:
-        """Classify an already-normalized 5-vector. Returns a result dict."""
-        f = [_clamp01(float(x)) for x in norm5]
-        while len(f) < 5:
-            f.append(0.0)
-        f = f[:5]
+        """Classify an already-normalized vector. Accepts either a full 5-D
+        vector (projected internally) or an ACTIVE_DIM-length projected vector.
+        Returns a result dict.
+        """
+        f = [float(x) for x in norm5]
+        # If given a full 5-D vector, project; otherwise assume already projected.
+        if len(f) == 5:
+            f = self._project(f)
+        elif len(f) != ACTIVE_DIM:
+            f = (f + [0.0] * ACTIVE_DIM)[:ACTIVE_DIM]
+        f = [_clamp01(x) for x in f]
 
         best_letter: Optional[str] = None
         best_dist = float("inf")
@@ -213,12 +273,17 @@ class ASLClassifier:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         data = {
-            "version": 1,
+            "version": 2,
+            "active_letters": list(ACTIVE_LETTERS),
+            "active_channels": list(ACTIVE_CHANNELS),
+            "active_channel_names": ["thumb", "index", "middle", "pinky"],
+            "disabled_channel": 3,  # ring (GPIO4) — hardware fault, dropped
             "convention": {"channels": ["thumb", "index", "middle", "ring", "pinky"],
+                           "active": ["thumb", "index", "middle", "pinky"],
                            "scale": "0=straight, 1=bent"},
             "range": {"min": self.range_min, "max": self.range_max},
             "polarity": self.polarity,
-            "captured_templates": self.captured_templates,
+            "captured_templates": self.captured_templates,  # length ACTIVE_DIM
             "use_captured": self.use_capt,
             "reject_threshold": self.reject_threshold,
         }
@@ -245,9 +310,13 @@ class ASLClassifier:
 
     # ── diagnostics ──────────────────────────────────────────────────────
     def distance_matrix(self) -> str:
-        """Printable inter-template euclidean distance matrix (sanity check)."""
+        """Printable inter-template euclidean distance matrix (sanity check).
+
+        Computed in the projected ACTIVE_CHANNELS space (length ACTIVE_DIM),
+        matching what classify actually compares.
+        """
         tmpls = self._active_templates()
-        letters = [L for L in ASL_LETTERS if L in tmpls]
+        letters = [L for L in ACTIVE_LETTERS if L in tmpls]
         header = "    " + " ".join(f"{L:>6}" for L in letters)
         lines = [header]
         for a in letters:

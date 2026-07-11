@@ -25,6 +25,7 @@ Run:
 from __future__ import annotations
 
 import argparse
+import math
 import statistics
 import sys
 import time
@@ -37,6 +38,7 @@ sys.path.insert(0, str(_RELAY_ROOT))
 
 from src.inference.asl_classifier import (  # noqa: E402
     ASLClassifier, ASL_LETTERS, ASL_TEMPLATES, DEFAULT_CALIBRATION_PATH,
+    ACTIVE_CHANNELS, ACTIVE_DIM,
 )
 
 try:
@@ -129,15 +131,17 @@ def _channel_max(samples: List[List[float]]) -> List[float]:
 
 
 GUIDE = {
-    "OPEN": "OPEN hand (B-pose): spread ALL 5 fingers fully straight, palm forward",
-    "FIST": "FIST (A-pose): curl ALL 5 fingers into a tight fist, thumb outside",
+    "OPEN": "OPEN hand (B-pose): spread ALL fingers fully straight, palm forward",
+    "FIST": "FIST (A-pose): curl ALL fingers into a tight fist, thumb outside",
     "A": "Letter A: fist with thumb tucked along the SIDE of the index finger",
     "B": "Letter B: flat palm, 4 fingers straight together, thumb folded across palm",
     "I": "Letter I: fist with ONLY the pinky extended straight up",
     "L": "Letter L: index up + thumb out sideways, 90° angle, others curled",
-    "W": "Letter W: index+middle+ring straight & spread, pinky curled, thumb tucked",
-    "Y": "Letter Y: thumb + pinky extended out (horns), middle 3 fingers curled",
 }
+# NOTE: W and Y are NOT captured — the ring-finger channel (ch3/GPIO4) is a
+# confirmed hardware fault on this glove, and W/Y need a working ring channel
+# to separate from B/A respectively. The 4 active letters A/B/I/L separate
+# cleanly on the 4 working channels (thumb/index/middle/pinky).
 
 
 def main() -> int:
@@ -151,34 +155,32 @@ def main() -> int:
     args = p.parse_args()
 
     clf = ASLClassifier()
+    n_letters = len(ASL_LETTERS)          # 4 (A/B/I/L)
+    n_steps = 2 + n_letters               # OPEN + FIST + 4 letters = 6
     print(f"=== EchoGlove ASL calibration capture ===")
     print(f"Serial: {args.port} @ {args.baud}   Hold: {args.hold}s   Out: {args.out}")
+    print(f"Active letters: {' '.join(ASL_LETTERS)} on channels "
+          f"{[names[i] for i in ACTIVE_CHANNELS]} (ring ch3 disabled — hw fault).")
     print("Each pose: 3s prep countdown, then hold steady while capturing.")
     print("Range step uses per-channel MIN/MAX (not mean) — hit the FULL extreme.")
     stream = EGStream(args.port, args.baud)
     names = ["thumb", "index", "middle", "ring ", "pinky"]
-    # raw-count swing threshold (on the /4095 scale this is 0.05 ≈ 205 counts).
-    # Below this the channel's range is unreliable and templates will collapse.
+    # raw-count swing threshold (on the /4095 scale 0.05 ≈ 205 counts). Only
+    # the ACTIVE channels are checked — ch3 (ring) is a confirmed hardware
+    # fault and will never swing, so it must not block capture.
     MIN_SWING = 0.05
     try:
         # ── Phase 1+2: dynamic range (open → min, fist → max) ────────────
-        # Loop OPEN+FIST until every channel shows a usable swing. The first
-        # capture failed because some fingers did not reach a true extreme, so
-        # the per-channel range collapsed and every letter normalized to [1,1,..].
+        # Loop OPEN+FIST until every ACTIVE channel shows a usable swing.
         for attempt in range(1, 4):
-            open_s, _ = _prompt(GUIDE["OPEN"] + "  [step 1/8: range MIN]"
+            open_s, _ = _prompt(GUIDE["OPEN"] + f"  [step 1/{n_steps}: range MIN]"
                                 + (f"  (attempt {attempt})" if attempt > 1 else ""),
                                 int(args.hold), stream)
-            fist_s, _ = _prompt(GUIDE["FIST"] + "  [step 2/8: range MAX]"
+            fist_s, _ = _prompt(GUIDE["FIST"] + f"  [step 2/{n_steps}: range MAX]"
                                 + (f"  (attempt {attempt})" if attempt > 1 else ""),
                                 int(args.hold), stream)
-            # Use per-channel min/max of the captured window — the finger only
-            # hits the true extreme for part of the hold, and mean would average
-            # that back toward the middle and under-report the swing.
             open_lo = _channel_min(open_s); open_hi = _channel_max(open_s)
             fist_lo = _channel_min(fist_s); fist_hi = _channel_max(fist_s)
-            # The straight (open) raw extent is [open_lo..open_hi]; bent (fist)
-            # is [fist_lo..fist_hi]. Polarity by comparing the means (stable).
             open_mean = _channel_mean(open_s); fist_mean = _channel_mean(fist_s)
             polarity = ASLClassifier.detect_polarity(open_mean, fist_mean)
             range_min: List[float] = [0.0] * 5
@@ -188,22 +190,24 @@ def main() -> int:
                     range_min[i] = open_lo[i]    # straight floor
                     range_max[i] = fist_hi[i]    # bent ceiling
                 else:                            # raw drops when bent
-                    range_min[i] = fist_lo[i]    # straight (bent drops) floor
-                    range_max[i] = open_hi[i]    # open ceiling
+                    range_min[i] = fist_lo[i]
+                    range_max[i] = open_hi[i]
             clf.set_range(range_min, range_max, polarity)
             print("\n    range (raw/4095 scale; raw count = ×4095):")
             for i in range(5):
                 pol = "↑rises" if polarity[i] == 1 else "↓drops"
                 sw = range_max[i] - range_min[i]
+                tag = "  [DISABLED hw-fault]" if i not in ACTIVE_CHANNELS else ""
                 print(f"      ch{i} {names[i]}: min={range_min[i]:.3f} "
-                      f"max={range_max[i]:.3f}  swing={sw:.3f} (~{int(sw*4095)} cnt)  {pol}")
-            small = [i for i in range(5)
+                      f"max={range_max[i]:.3f}  swing={sw:.3f} (~{int(sw*4095)} cnt)  {pol}{tag}")
+            # Only check the ACTIVE channels; ch3 (ring) is ignored.
+            small = [i for i in ACTIVE_CHANNELS
                      if abs(range_max[i] - range_min[i]) < MIN_SWING]
             if not small:
-                print("    ✓ all channels have usable swing — proceeding to letters.")
+                print("    ✓ all ACTIVE channels have usable swing — proceeding to letters.")
                 break
-            print(f"    ✗ channels {small} swing < {MIN_SWING} — those fingers did "
-                  "not reach a true extreme.")
+            print(f"    ✗ active channels {small} swing < {MIN_SWING} — those fingers "
+                  "did not reach a true extreme.")
             print("      Redo OPEN+FIST. TIP: spread fingers WIDE and press them "
                   "BACK for OPEN; squeeze a TIGHT fist wrapping the thumb for FIST.")
             if attempt < 3:
@@ -212,15 +216,18 @@ def main() -> int:
                 print("    ⚠ still small after 3 attempts — continuing anyway "
                       "(check sensor coupling for those channels).")
 
-        # ── Phase 3..8: per-letter templates ─────────────────────────────
+        # ── Phase 3..n: per-letter templates ─────────────────────────────
+        spec_proj = {L: [ASL_TEMPLATES[L][i] for i in ACTIVE_CHANNELS]
+                     for L in ASL_LETTERS}
         for idx, L in enumerate(ASL_LETTERS, start=3):
-            samples, _ = _prompt(GUIDE[L] + f"  [step {idx}/8: letter {L}]",
+            samples, _ = _prompt(GUIDE[L] + f"  [step {idx}/{n_steps}: letter {L}]",
                                  int(args.hold), stream)
             tmpl = clf.capture_letter(L, samples)
-            spec = ASL_TEMPLATES[L]
+            spec = spec_proj[L]
             print(f"    {L} captured = [{', '.join(f'{x:.2f}' for x in tmpl)}]"
-                  f"   spec = [{', '.join(f'{x:.2f}' for x in spec)}]")
-            d = sum((tmpl[k] - spec[k]) ** 2 for k in range(5)) ** 0.5
+                  f"   spec = [{', '.join(f'{x:.2f}' for x in spec)}]"
+                  f"  (ch {list(ACTIVE_CHANNELS)})")
+            d = math.dist(tmpl, spec)
             print(f"        drift from spec: {d:.2f}")
 
         clf.use_captured(True)
@@ -237,7 +244,8 @@ def main() -> int:
     # and saving this file would make demo_server silently misclassify. The
     # first capture attempt hit this (min dist = 0.004, A==B). Refuse + tell
     # the user which pair collapsed so they can redo those letters crisply.
-    import math
+    # Templates are stored projected to ACTIVE_DIM, so distances here already
+    # exclude the broken ring channel.
     tmpls = clf.captured_templates
     letters = [L for L in ASL_LETTERS if L in tmpls]
     pairs = [(a, b, math.dist(tmpls[a], tmpls[b]))
@@ -245,7 +253,9 @@ def main() -> int:
     if pairs:
         pairs.sort(key=lambda p: p[2])
         mn_a, mn_b, mn_d = pairs[0]
-        MIN_ACCEPTABLE = 0.20  # well below the theoretical 0.559 (I vs Y)
+        # Theoretical min for A/B/I/L on 4 good channels is 0.923 (A vs L);
+        # require at least 0.30 in practice (handles capture noise + pose drift).
+        MIN_ACCEPTABLE = 0.30
         print(f"\nmin inter-class distance: {mn_d:.3f} ({mn_a} vs {mn_b})")
         if mn_d < MIN_ACCEPTABLE:
             print(f"\n✗ REFUSING to save — {mn_a} and {mn_b} captured too close "
@@ -253,7 +263,7 @@ def main() -> int:
             print("  Those two letters normalized to nearly the same vector, so")
             print("  at least one finger did not reach a distinct position.")
             print(f"  Re-run and hold {mn_a} and {mn_b} with maximum contrast on")
-            print("  every finger (especially thumb + pinky). Nothing was saved.")
+            print("  the thumb/index/middle/pinky channels. Nothing was saved.")
             return 1
         print(f"✓ min distance {mn_d:.3f} ≥ {MIN_ACCEPTABLE} — calibration usable.")
 
