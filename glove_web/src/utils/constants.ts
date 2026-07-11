@@ -117,6 +117,36 @@ export const GESTURE_LABELS: Record<number, string> = {
   26: 'Y',
 };
 
+// ── English spoken labels for TTS ──
+// Dashboard 自动播报：命中某手势 ID 且置信度≥TTS_CONFIDENCE_THRESHOLD 时，
+// speak() 对应英文。CSL 中文手势映射成英文释义，ASL 字母直接用字母名。
+// 0/无手势不播。
+export const GESTURE_LABELS_EN: Record<number, string> = {
+  1: 'Hello',
+  2: 'Thank you',
+  3: 'Sorry',
+  4: 'Yes',
+  5: 'No',
+  6: 'Please',
+  7: 'Help',
+  8: 'Love',
+  9: 'Family',
+  10: 'School',
+  11: 'Eat',
+  12: 'Drink',
+  13: 'Good',
+  14: 'Goodbye',
+  21: 'A',
+  22: 'B',
+  23: 'I',
+  24: 'L',
+  25: 'W',
+  26: 'Y',
+};
+
+// 自动播报置信度阈值：低于此值视为不可信，不播（与 store 记录历史的 0.5 对齐）
+export const TTS_CONFIDENCE_THRESHOLD = 0.6;
+
 // ── Defaults ──
 export const DEFAULT_RELAY_HOST = 'localhost';
 export const DEFAULT_WS_PORT = 8765;

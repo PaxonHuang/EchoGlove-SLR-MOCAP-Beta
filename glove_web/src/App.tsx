@@ -1,5 +1,6 @@
 import { Suspense, lazy, useState } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
+import { useGestureTTS } from './hooks/useGestureTTS';
 import { useSensorStore } from './stores/useSensorStore';
 import { useSettingsStore } from './stores/useSettingsStore';
 import Header from './components/Layout/Header';
@@ -25,6 +26,9 @@ export default function App() {
   const isStreaming = useSensorStore((s) => s.isStreaming);
   const { show3D, showDashboard, darkMode } = useSettingsStore();
   const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
+
+  // 仪表盘实时识别自动播报英文语音（置信度≥阈值且切到新手势时触发）
+  useGestureTTS({ enabled: viewMode === 'dashboard' });
 
   return (
     <div
