@@ -5,11 +5,46 @@
 ![EchoGlove](image/README/1778514913749.jpg)
 
 > **Branch**: `feature/v6-dual-s3p4-flex-lsm6dsv16x` (active)
-> **Last verified vs code**: 2026-07-10
+> **Last verified vs code**: 2026-07-11
 
 ---
 
-## System Status (code-verified 2026-07-10)
+## Competition Demo Fast-Path (2026-07-11, LIVE)
+
+A lightweight, on-device demo path for the competition — bypasses the full V5/V6 relay + ST-GCN stack. **S3 flex → USB CDC → rule classifier → WebSocket → React**.
+
+```
+ESP32-S3 (5× flex, internal ADC1)  ──USB CDC "$EG,..."──▶  demo_server.py  ──WS:8765──▶  React+R3F
+                                                              │
+                                                              ▼
+                                                   rule_classifier.py (8-sign euclidean
+                                                   template matcher, 14 pytest pass)
+```
+
+**Demo features (all live)**:
+- **Dashboard** (desktop): right-main ≥60% panel (fused result hero + sensor/stats 2-col), left 3D MOCAP corner ≤40%. Real-time **forward-kinematics** hand — `FingerChain` nested MCP→PIP→DIP rotation, palm + forearm, flex→15 joint angles. **Auto-speak English** on recognized gesture (confidence ≥ 0.6, debounced per new id; `GESTURE_LABELS_EN`).
+- **Sign teaching page** (手语教学): full-screen enlarged anatomical hand + right button panel — **7 CSL signs** (你/好/再见/快乐/后悔/吃饭/睡觉) + **6 ASL letters** (A/B/I/L/W/Y). Click a button → plays keyframe animation **and** English TTS (CSL → `nameEn`, ASL → letter).
+- **TTS**: zero-dependency Web Speech API (`useTTS` / `useGestureTTS` hooks), all English (en-US).
+- **Classifier**: 4-channel A/B/I/L (ring ch3 hardware fault → dropped from active set; W/Y templates retained). Calibration via `glove_relay/scripts/calibrate_demo.py` (8-pose interactive capture, `demo_calibration.json`).
+
+**Run the demo**:
+```bash
+# 1. Flash S3 (flex via internal ADC1, ESP-NOW intact, USB CDC "$EG,..." output every 3rd frame)
+cd glove_firmware && pio run -t upload
+
+# 2. Start demo relay (standalone, no main relay lifespan touched)
+cd glove_relay
+conda run -n pytorch_env python scripts/demo_server.py   # USB CDC→RuleClassifier→WS:8765
+
+# 3. Web
+cd glove_web && npm install && npm run dev               # http://localhost:5173
+```
+
+> udev: S3 on `/dev/ttyACM0` needs `99-platformio-udev.rules` (sudo pw `qwer` per local machine) — see memory `s3-serial-udev-perms`.
+
+---
+
+## System Status (code-verified 2026-07-11)
 
 The project is mid-migration from V5 (BNO085 + ADS1115 + ESP-NOW) to V6 (LSM6DSV16X + internal ADC + wired UART / Wi-Fi UDP). To avoid misleading collaborators, the table below distinguishes **what actually runs** from **what is designed but not yet implemented**.
 
@@ -113,6 +148,10 @@ npm install
 npm run dev                # Dev server: http://localhost:5173
 npm run build              # Production build
 ```
+
+**Views**:
+- **仪表盘 (Dashboard)**: real-time 3D FK hand (R3F) + fused recognition panel + sensor/stats. Auto-plays English TTS on recognized gestures (confidence ≥ 0.6).
+- **手语教学 (Sign Teaching)**: full-screen anatomical hand + button panel (7 CSL signs + 6 ASL letters). Click → animation + English TTS.
 
 ### 5. Unity Pro (glove_unity) — Windows Only
 
