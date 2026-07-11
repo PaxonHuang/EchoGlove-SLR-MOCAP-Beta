@@ -76,9 +76,9 @@ export default function App() {
         </main>
       ) : (
         <main className="flex flex-1 flex-col overflow-hidden lg:flex-row">
-          {/* 3D Hand Visualization */}
+          {/* 3D Hand Visualization — 次要展示，缩至左角（≤40%）*/}
           {show3D && (
-            <section className="relative order-1 min-h-[320px] flex-1 lg:order-none">
+            <section className="relative order-1 min-h-[260px] lg:order-none lg:w-[36%] lg:min-w-[280px] lg:max-w-[40%] shrink-0 border-b border-slate-800 lg:border-b-0 lg:border-r">
               <Suspense
                 fallback={
                   <div className="flex h-full items-center justify-center bg-slate-900">
@@ -90,18 +90,23 @@ export default function App() {
               </Suspense>
               {!isStreaming && status === 'connected' && (
                 <div className="absolute inset-0 flex items-center justify-center bg-slate-950/60">
-                  <p className="text-sm text-slate-400">Waiting for sensor data...</p>
+                  <p className="text-sm text-slate-400">等待传感器数据...</p>
                 </div>
               )}
             </section>
           )}
 
-          {/* Dashboard Panels */}
+          {/* Dashboard Panels — 主展示区（≥60%），融合识别结果居首 */}
           {showDashboard && (
-            <aside className="order-2 flex flex-col gap-4 overflow-y-auto border-t border-slate-800 p-4 lg:order-none lg:w-[420px] lg:border-l lg:border-t-0">
+            <aside className="order-2 flex-1 overflow-y-auto p-4 lg:order-none">
+              {/* 融合识别结果（hero，全宽）*/}
               <GestureResult />
-              <SensorDataPanel />
-              <StatsPanel connectionStatus={status} />
+
+              {/* 传感器 + 统计：宽区两列并排 */}
+              <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+                <SensorDataPanel />
+                <StatsPanel connectionStatus={status} />
+              </div>
             </aside>
           )}
         </main>

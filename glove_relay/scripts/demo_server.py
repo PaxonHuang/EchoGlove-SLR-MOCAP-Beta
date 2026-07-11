@@ -50,17 +50,18 @@ def build_classifier(args: argparse.Namespace):
     """Pick the ASL template classifier if a calibration file exists, else the
     threshold rule classifier. Returns (classifier, kind, normalize_before).
 
-    The ASL classifier re-normalizes each raw frame with the captured per-
-    channel range before matching; the rule classifier expects already-
-    normalized 0..1 input (firmware's raw/4095 fallback — mediocre but works
-    once the ASL path is calibrated away).
+    The ASL classifier re-normalizes each raw 5-channel frame with the captured
+    per-channel range, then projects onto the 4 working channels (ring ch3 is a
+    hardware fault — masked out) before matching A/B/I/L. The rule classifier
+    expects already-normalized 0..1 input (firmware's raw/4095 fallback —
+    mediocre but works once the ASL path is calibrated away).
     """
     calib = Path(args.calibration)
     if calib.exists():
         clf = ASLClassifier()
         if clf.load(calib):
             kind = "asl" + ("+captured" if clf.use_capt else "+theoretical")
-            logger.info("Classifier: ASL 6-letter (%s), calibration=%s", kind, calib)
+            logger.info("Classifier: ASL 4-letter A/B/I/L (%s), calibration=%s", kind, calib)
             if clf.has_range:
                 logger.info("  range min=%s max=%s polarity=%s",
                             [round(x, 3) for x in clf.range_min],

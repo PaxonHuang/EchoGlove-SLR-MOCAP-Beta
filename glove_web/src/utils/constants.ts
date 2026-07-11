@@ -87,6 +87,10 @@ export const FLEX_FINGER_MAP: { sensorIdx: number; mcpKeypoint: number; pipKeypo
 ];
 
 // ── Gesture Label Map ──
+// 0-14: Chinese-gesture labels (legacy V5). 21-26: ASL letters (demo
+// classifier). demo_server also sends nlp_text=the letter so the NLP panel
+// shows it regardless, but mapping the id here makes the result/history
+// panels render the letter directly instead of "手势 #22".
 export const GESTURE_LABELS: Record<number, string> = {
   0: '无手势',
   1: '你好',
@@ -103,6 +107,14 @@ export const GESTURE_LABELS: Record<number, string> = {
   12: '喝水',
   13: '好',
   14: '再见',
+  // ASL letters (4-channel demo on the broken-ring glove uses A/B/I/L only;
+  // W/Y ids retained for completeness but not actively classified).
+  21: 'A',
+  22: 'B',
+  23: 'I',
+  24: 'L',
+  25: 'W',
+  26: 'Y',
 };
 
 // ── Defaults ──

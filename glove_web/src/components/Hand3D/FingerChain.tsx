@@ -108,7 +108,30 @@ export function useFingerColors(): Record<string, string> {
   }, []);
 }
 
-// ── 整手 FK 链（5 指，15 关节角）──
+// ── 手掌（掌板）──
+// 解剖学：掌面从腕骨延伸至掌指关节(MCP)列，略向背侧(-Z)以便指根自掌面长出。
+// 用扁盒近似掌板，覆盖 MCP 基座横列；肤色调，与彩色指段区分。
+export function Palm() {
+  return (
+    <mesh position={[0, 0.012, -0.007]} castShadow>
+      <boxGeometry args={[0.10, 0.052, 0.016]} />
+      <meshStandardMaterial color={COLORS.skin} roughness={0.55} metalness={0.05} />
+    </mesh>
+  );
+}
+
+// ── 前臂短桩 ──
+// 自腕球向 -Y 延伸，让"整只手"完整；肤色调。
+export function Forearm() {
+  return (
+    <mesh position={[0, -0.03, -0.005]} castShadow>
+      <cylinderGeometry args={[0.013, 0.016, 0.05, 12]} />
+      <meshStandardMaterial color={COLORS.skin} roughness={0.6} metalness={0.05} />
+    </mesh>
+  );
+}
+
+// ── 整手 FK 链（5 指，15 关节角 + 掌 + 前臂）──
 // 由调用方提供 jointAngles[15]；wristQuat 由外层 group 应用。
 export function FullHandChain({
   jointAngles,
@@ -119,6 +142,10 @@ export function FullHandChain({
 }) {
   return (
     <>
+      {/* 前臂 */}
+      <Forearm />
+      {/* 手掌 */}
+      <Palm />
       {/* 腕球 */}
       <JointSphere color={COLORS.wrist} radius={0.012} />
 

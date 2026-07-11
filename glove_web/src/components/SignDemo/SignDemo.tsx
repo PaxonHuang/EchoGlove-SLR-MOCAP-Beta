@@ -1,6 +1,6 @@
 // ── SignDemo: 手语教学页 ──
 // 布局：左 ~60% 3D 画布 + 右 ~40% 滚动按钮面板（CSL 手语 + ASL 字母两组字符按钮）。
-// 字符按钮替代原 SignCard 横滚，点击触发对应 keyframes 播放。
+// 字符按钮替代原 SignCard 横滚，点击触发对应 keyframes 播放 + TTS 语音。
 
 import { Suspense, lazy, useCallback } from 'react';
 import { useDemoStore } from '../../stores/useDemoStore';
@@ -9,6 +9,7 @@ import {
   SIGN_MAP,
   CATEGORY_COLORS,
 } from '../../utils/signLanguage';
+import { useTTS } from '../../hooks/useTTS';
 import PlaybackControls from './PlaybackControls';
 import SignSubtitle from './SignSubtitle';
 
@@ -24,11 +25,21 @@ export default function SignDemo() {
   const playSign = useDemoStore(s => s.playSign);
   const currentSignId = useDemoStore(s => s.currentSignId);
   const mode = useDemoStore(s => s.mode);
+  const { speak, supported: ttsSupported } = useTTS();
 
   const handleCardClick = useCallback((signId: string) => {
     const sign = SIGN_MAP.get(signId);
-    if (sign) playSign(sign.id, sign.keyframes, sign.wave);
-  }, [playSign]);
+    if (sign) {
+      playSign(sign.id, sign.keyframes, sign.wave);
+      // TTS：CSL 手语播中文 name，ASL 字母播英文 nameEn（"ASL-A" → "A"）
+      if (sign.category === 'ASL字母') {
+        const letter = sign.name; // 'A'..'Y'
+        speak(letter, { lang: 'en-US', rate: 0.85 });
+      } else {
+        speak(sign.name, { lang: 'zh-CN', rate: 0.9 });
+      }
+    }
+  }, [playSign, speak]);
 
   const handlePlaySequence = useCallback(() => {
     const signs = SIGN_DEFINITIONS.map(s => ({
@@ -37,6 +48,10 @@ export default function SignDemo() {
       wave: s.wave,
     }));
     useDemoStore.getState().playSequence(signs);
+  }, []);
+
+  const handleStop = useCallback(() => {
+    useDemoStore.getState().stop();
   }, []);
 
   const isPlaying = mode !== 'idle';
@@ -65,7 +80,7 @@ export default function SignDemo() {
         {isPlaying && (
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20">
             <button
-              onClick={() => useDemoStore.getState().stop()}
+              onClick={handleStop}
               className="flex items-center gap-1.5 rounded-lg bg-red-600/80 px-4 py-2.5 text-sm font-medium text-white backdrop-blur-sm hover:bg-red-500 transition-all duration-150 shadow-lg"
             >
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -98,6 +113,13 @@ export default function SignDemo() {
         {/* 顶部播放控制 */}
         <div className="px-4 pt-3 pb-2 border-b border-slate-700/40">
           <PlaybackControls onPlaySequence={handlePlaySequence} />
+          {/* TTS 状态提示 */}
+          <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-slate-500">
+            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072M17.95 6.05a8 8 0 010 11.9M5 9v6h4l5 4V5L9 9H5z" />
+            </svg>
+            <span>{ttsSupported ? '点击按钮自动播放语音' : '当前浏览器不支持语音'}</span>
+          </div>
         </div>
 
         {/* 滚动按钮区 */}
@@ -122,6 +144,7 @@ export default function SignDemo() {
     </div>
   );
 }
+
 
 // ── 按钮组 ──
 function ButtonGroup({
