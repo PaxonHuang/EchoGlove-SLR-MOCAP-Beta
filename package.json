@@ -1,0 +1,25 @@
+{
+  "name": "echoglove-slr-mocap-beta",
+  "version": "1.0.0",
+  "description": "**3-tier inference system for real-time sign language translation and 3D hand animation, with dual-hand support.**",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PaxonHuang/EchoGlove-SLR-MOCAP-Beta.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/PaxonHuang/EchoGlove-SLR-MOCAP-Beta/issues"
+  },
+  "homepage": "https://github.com/PaxonHuang/EchoGlove-SLR-MOCAP-Beta#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^26.1.1"
+  }
+}

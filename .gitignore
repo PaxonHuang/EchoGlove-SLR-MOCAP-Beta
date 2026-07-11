@@ -96,3 +96,11 @@ graphify-out/
 # Binary archives (don't store in git)
 *.zip
 *.rar
+
+# Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
