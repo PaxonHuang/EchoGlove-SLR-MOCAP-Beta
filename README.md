@@ -2,7 +2,8 @@
 
 **3-tier inference system for real-time sign language translation and 3D hand animation, with dual-hand support.**
 
-![EchoGlove](image/README/1778514913749.jpg)
+![EchoGlove]](img/img_v3_0213h_dd87cdbd-5ad6-4cbd-a6f6-151bc795772g.jpg)
+![HB](img/img_v3_0213h_dd87cdbd-5ad6-4cbd-a6f6-151bc795772g.jpg)
 
 > **Branch**: `feature/v6-dual-s3p4-flex-lsm6dsv16x` (active)
 > **Last verified vs code**: 2026-07-11
