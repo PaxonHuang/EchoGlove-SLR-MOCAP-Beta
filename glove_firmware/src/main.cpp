@@ -89,6 +89,18 @@ static void Task_SensorRead(void *pvParameters) {
         pkt.status = static_cast<uint8_t>(STATUS_STREAMING);
         pkt.computeChecksum();
 
+        // ── DEMO: USB CDC ASCII flex stream for demo_server.py ──────────────
+        // Every 3rd frame (~33 Hz): emit "$EG,f0,f1,f2,f3,f4,tick\n" over USB
+        // CDC (which IS Serial here, ARDUINO_USB_CDC_ON_BOOT=1). flex values
+        // are normalized 0=straight .. 1=bent. Parsed by the standalone
+        // glove_relay/scripts/demo_server.py → rule classifier → V5 WS JSON.
+        // ESP-NOW broadcast above is unaffected. ~8 lines, opt-out via flag.
+        if (pkt.tick_id % 3 == 0) {
+            Serial.printf("$EG,%.3f,%.3f,%.3f,%.3f,%.3f,%u\n",
+                          pkt.flex[0], pkt.flex[1], pkt.flex[2],
+                          pkt.flex[3], pkt.flex[4], pkt.tick_id);
+        }
+
         // Send to comms queue (non-blocking, drop if full)
         xQueueSend(g_comms_queue, &pkt, 0);
     }
