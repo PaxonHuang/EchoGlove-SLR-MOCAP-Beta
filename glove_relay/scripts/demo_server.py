@@ -42,7 +42,33 @@ sys.path.insert(0, str(_RELAY_ROOT / "proto"))         # for glove_data_pb2
 import websockets                                       # noqa: E402
 from websockets.server import serve                     # noqa: E402
 
+from src.inference.asl_classifier import ASLClassifier, DEFAULT_CALIBRATION_PATH  # noqa: E402
 from src.inference.rule_classifier import RuleClassifier   # noqa: E402
+
+
+def build_classifier(args: argparse.Namespace):
+    """Pick the ASL template classifier if a calibration file exists, else the
+    threshold rule classifier. Returns (classifier, kind, normalize_before).
+
+    The ASL classifier re-normalizes each raw frame with the captured per-
+    channel range before matching; the rule classifier expects already-
+    normalized 0..1 input (firmware's raw/4095 fallback — mediocre but works
+    once the ASL path is calibrated away).
+    """
+    calib = Path(args.calibration)
+    if calib.exists():
+        clf = ASLClassifier()
+        if clf.load(calib):
+            kind = "asl" + ("+captured" if clf.use_capt else "+theoretical")
+            logger.info("Classifier: ASL 6-letter (%s), calibration=%s", kind, calib)
+            if clf.has_range:
+                logger.info("  range min=%s max=%s polarity=%s",
+                            [round(x, 3) for x in clf.range_min],
+                            [round(x, 3) for x in clf.range_max], clf.polarity)
+            return clf, kind, True
+        logger.warning("Calibration file unreadable (%s); falling back to rules", calib)
+    logger.info("Classifier: rule-based (no calibration — run calibrate_demo.py)")
+    return RuleClassifier(), "rule", False
 
 # Optional serial-asyncio (only needed for the live USB path)
 try:
@@ -296,7 +322,7 @@ async def amain(args: argparse.Namespace) -> None:
     logger.info("UDP:  0.0.0.0:%d  (reserved ReceiverPacket path)", args.udp_port)
 
     hub = WSHub()
-    classifier = RuleClassifier()
+    classifier, clf_kind, renorm = build_classifier(args)
 
     stats = {"frames": 0, "last_label": ""}
 
@@ -305,18 +331,25 @@ async def amain(args: argparse.Namespace) -> None:
         if parsed is None:
             return
         flex, tick = parsed
-        result = classifier.classify(flex)
+        if renorm:
+            result = classifier.classify_raw(flex)
+        else:
+            result = classifier.classify(flex)
         msg = build_v5_message(flex, result, tick)
         stats["frames"] += 1
         if result["label"] != stats["last_label"]:
             stats["last_label"] = result["label"]
-            logger.info("sign: %-10s id=%2d text=%s conf=%.2f (frame#%d)",
+            logger.info("sign: %-10s id=%2d text=%s conf=%.2f d=%s (frame#%d)",
                         result["label"], result["gesture_id"], result["text"],
-                        result["confidence"], stats["frames"])
+                        result["confidence"], result.get("distance", "-"),
+                        stats["frames"])
         await hub.broadcast(msg)
 
     async def on_udp_packet(flex: list, tick: int) -> None:
-        result = classifier.classify(flex)
+        if renorm:
+            result = classifier.classify_raw(flex)
+        else:
+            result = classifier.classify(flex)
         msg = build_v5_message(flex, result, tick)
         logger.info("UDP sign: %s (tick %d)", result["text"], tick)
         await hub.broadcast(msg)
@@ -368,6 +401,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--serial-port", default=os.environ.get("DEMO_SERIAL_PORT", DEFAULT_SERIAL_PORT))
     p.add_argument("--serial-baud", type=int, default=DEFAULT_SERIAL_BAUD)
     p.add_argument("--udp-port", type=int, default=DEFAULT_UDP_PORT)
+    p.add_argument("--calibration", default=os.environ.get(
+        "DEMO_CALIBRATION", str(DEFAULT_CALIBRATION_PATH)),
+        help="path to demo_calibration.json (produced by calibrate_demo.py)")
     return p.parse_args()
 
 
