@@ -1,8 +1,11 @@
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Grid, PerspectiveCamera, Text } from '@react-three/drei';
-import HandSkeleton from './HandSkeleton';
+import { OrbitControls, Grid, PerspectiveCamera } from '@react-three/drei';
+import { LiveHandRenderer } from './LiveHandRenderer';
 import { COLORS } from '../../utils/constants';
 
+// ── HandCanvas: 仪表盘画布 ──
+// 用户选择：只显左手居中（FK 关节链实时 MOCAP）。
+// 移除右手 + LEFT/RIGHT 标签；相机聚焦单手。
 export function HandCanvas() {
   return (
     <div className="h-full w-full">
@@ -11,8 +14,8 @@ export function HandCanvas() {
         dpr={[1, 2]}
         style={{ background: COLORS.background }}
       >
-        {/* Camera — pulled back to see both hands */}
-        <PerspectiveCamera makeDefault position={[0, 3, 8]} fov={50} />
+        {/* Camera — 单手居中，拉近 */}
+        <PerspectiveCamera makeDefault position={[0, 1.5, 5]} fov={50} />
 
         {/* Lighting */}
         <ambientLight intensity={0.6} />
@@ -34,37 +37,16 @@ export function HandCanvas() {
           infiniteGrid
         />
 
-        {/* Left Hand */}
-        <HandSkeleton handedness="left" position={[-1.8, 0.5, 0]} />
-        <Text
-          position={[-1.8, -0.2, 0]}
-          fontSize={0.2}
-          color="#94a3b8"
-          anchorX="center"
-          anchorY="top"
-        >
-          LEFT
-        </Text>
-
-        {/* Right Hand */}
-        <HandSkeleton handedness="right" position={[1.8, 0.5, 0]} />
-        <Text
-          position={[1.8, -0.2, 0]}
-          fontSize={0.2}
-          color="#94a3b8"
-          anchorX="center"
-          anchorY="top"
-        >
-          RIGHT
-        </Text>
+        {/* 左手 FK 实时 MOCAP（居中）*/}
+        <LiveHandRenderer position={[0, 0.3, 0]} />
 
         {/* Orbit Controls */}
         <OrbitControls
           enablePan={false}
           enableZoom={true}
-          minDistance={3}
-          maxDistance={15}
-          target={[0, 1.5, 0]}
+          minDistance={2}
+          maxDistance={10}
+          target={[0, 0.8, 0]}
         />
       </Canvas>
     </div>
