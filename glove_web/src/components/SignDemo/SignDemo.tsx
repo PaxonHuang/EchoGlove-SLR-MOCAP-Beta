@@ -31,13 +31,9 @@ export default function SignDemo() {
     const sign = SIGN_MAP.get(signId);
     if (sign) {
       playSign(sign.id, sign.keyframes, sign.wave);
-      // TTS：CSL 手语播中文 name，ASL 字母播英文 nameEn（"ASL-A" → "A"）
-      if (sign.category === 'ASL字母') {
-        const letter = sign.name; // 'A'..'Y'
-        speak(letter, { lang: 'en-US', rate: 0.85 });
-      } else {
-        speak(sign.name, { lang: 'zh-CN', rate: 0.9 });
-      }
+      // TTS 全英文：CSL 手语播英文 nameEn（You/Good/...），ASL 字母播字母名（A..Y）
+      const text = sign.category === 'ASL字母' ? sign.name : sign.nameEn;
+      speak(text, { lang: 'en-US', rate: 0.85 });
     }
   }, [playSign, speak]);
 
@@ -118,7 +114,7 @@ export default function SignDemo() {
             <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072M17.95 6.05a8 8 0 010 11.9M5 9v6h4l5 4V5L9 9H5z" />
             </svg>
-            <span>{ttsSupported ? '点击按钮自动播放语音' : '当前浏览器不支持语音'}</span>
+            <span>{ttsSupported ? '点击按钮自动播放英文语音' : '当前浏览器不支持语音'}</span>
           </div>
         </div>
 

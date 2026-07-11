@@ -1,11 +1,12 @@
 // ── useTTS: Web Speech API 语音合成 ──
-// 点击文字按钮播放对应语音：CSL 手语播中文(name)，ASL 字母播英文(nameEn)。
+// 点击文字按钮播放对应英文语音：CSL 手语播英文 nameEn（You/Good/...），
+// ASL 字母播字母名（A..Y）。全部 en-US。
 // 浏览器原生 SpeechSynthesis，零依赖；自动取消上一次、重置语音队列防重叠。
 
 import { useCallback, useEffect, useRef } from 'react';
 
 interface SpeakOptions {
-  lang?: string;   // BCP-47，如 'zh-CN' / 'en-US'
+  lang?: string;   // BCP-47，默认 'en-US'
   rate?: number;   // 语速 0.1–10，默认 1
   pitch?: number;  // 音高 0–2，默认 1
 }
@@ -14,7 +15,7 @@ function pickVoice(lang: string): SpeechSynthesisVoice | undefined {
   if (typeof window === 'undefined' || !window.speechSynthesis) return undefined;
   const voices = window.speechSynthesis.getVoices();
   if (voices.length === 0) return undefined;
-  // 精确语言前缀匹配优先，否则回退
+  // 精确语言前缀匹配优先，否则回退到任意 en 语种
   const prefix = lang.split('-')[0].toLowerCase();
   return (
     voices.find(v => v.lang === lang) ??
@@ -42,7 +43,7 @@ export function useTTS() {
     // 取消上一次，防重叠堆积
     synth.cancel();
     const utter = new SpeechSynthesisUtterance(text);
-    const lang = opts.lang ?? 'zh-CN';
+    const lang = opts.lang ?? 'en-US';
     utter.lang = lang;
     utter.rate = opts.rate ?? 0.95;
     utter.pitch = opts.pitch ?? 1;
