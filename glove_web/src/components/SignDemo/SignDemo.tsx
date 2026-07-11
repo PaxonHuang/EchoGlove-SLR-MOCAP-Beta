@@ -1,11 +1,14 @@
-// ── SignDemo: Sign language teaching demo page ──
-// 3D-dominant layout: canvas fills the viewport, drawer overlays as collapsible bottom panel.
-// Card-style subtitle overlay appears prominently during playback.
+// ── SignDemo: 手语教学页 ──
+// 布局：左 ~60% 3D 画布 + 右 ~40% 滚动按钮面板（CSL 手语 + ASL 字母两组字符按钮）。
+// 字符按钮替代原 SignCard 横滚，点击触发对应 keyframes 播放。
 
-import { Suspense, lazy, useCallback, useState } from 'react';
+import { Suspense, lazy, useCallback } from 'react';
 import { useDemoStore } from '../../stores/useDemoStore';
-import { SIGN_DEFINITIONS, CATEGORY_COLORS, SIGN_MAP } from '../../utils/signLanguage';
-import SignCard from './SignCard';
+import {
+  SIGN_DEFINITIONS,
+  SIGN_MAP,
+  CATEGORY_COLORS,
+} from '../../utils/signLanguage';
 import PlaybackControls from './PlaybackControls';
 import SignSubtitle from './SignSubtitle';
 
@@ -13,13 +16,14 @@ const DemoCanvas = lazy(() =>
   import('./DemoCanvas').then(m => ({ default: m.DemoCanvas })),
 );
 
+// 两组：CSL 手语（非 ASL字母 类别）+ ASL 字母
+const CSL_SIGNS = SIGN_DEFINITIONS.filter(s => s.category !== 'ASL字母');
+const ASL_SIGNS = SIGN_DEFINITIONS.filter(s => s.category === 'ASL字母');
+
 export default function SignDemo() {
   const playSign = useDemoStore(s => s.playSign);
-  const playSequence = useDemoStore(s => s.playSequence);
   const currentSignId = useDemoStore(s => s.currentSignId);
   const mode = useDemoStore(s => s.mode);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
   const handleCardClick = useCallback((signId: string) => {
     const sign = SIGN_MAP.get(signId);
@@ -32,20 +36,15 @@ export default function SignDemo() {
       keyframes: s.keyframes,
       wave: s.wave,
     }));
-    playSequence(signs);
-  }, [playSequence]);
-
-  const categories = SIGN_DEFINITIONS.reduce((acc, sign) => {
-    if (!acc.includes(sign.category)) acc.push(sign.category);
-    return acc;
-  }, [] as string[]);
+    useDemoStore.getState().playSequence(signs);
+  }, []);
 
   const isPlaying = mode !== 'idle';
 
   return (
-    <div className="relative h-full overflow-hidden">
-      {/* ── 3D Canvas — full viewport, dominant area ── */}
-      <div className="absolute inset-0">
+    <div className="flex h-full overflow-hidden">
+      {/* ── 左：3D 画布 ~60% ── */}
+      <div className="relative flex-1 min-w-0">
         <Suspense
           fallback={
             <div className="flex h-full items-center justify-center bg-slate-900">
@@ -59,23 +58,12 @@ export default function SignDemo() {
           <DemoCanvas />
         </Suspense>
 
-        {/* ── Subtitle overlay — prominent, top-center ── */}
+        {/* 字幕浮层 */}
         <SignSubtitle />
 
-        {/* ── Toggle drawer button (top-right) ── */}
-        <button
-          onClick={() => setDrawerOpen(!drawerOpen)}
-          className="absolute top-3 right-3 flex items-center gap-2 rounded-lg border border-slate-600/60 bg-slate-800/80 px-3 py-2 text-sm text-slate-300 backdrop-blur-sm hover:bg-slate-700/80 hover:text-white transition-all duration-200 z-20"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d={drawerOpen ? 'M6 18L18 6M6 6l12 12' : 'M4 6h16M4 12h16M4 18h16'} />
-          </svg>
-          {drawerOpen ? '关闭' : '手势列表'}
-        </button>
-
-        {/* ── Floating stop button when drawer closed & playing ── */}
-        {!drawerOpen && isPlaying && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 z-20">
+        {/* 播放中停止按钮 */}
+        {isPlaying && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20">
             <button
               onClick={() => useDemoStore.getState().stop()}
               className="flex items-center gap-1.5 rounded-lg bg-red-600/80 px-4 py-2.5 text-sm font-medium text-white backdrop-blur-sm hover:bg-red-500 transition-all duration-150 shadow-lg"
@@ -88,7 +76,7 @@ export default function SignDemo() {
           </div>
         )}
 
-        {/* ── Finger color legend (compact, bottom-left) ── */}
+        {/* 指色图例 */}
         <div className="absolute bottom-3 left-3 flex gap-2 pointer-events-none z-10">
           {[
             { color: '#ef4444', label: '拇指' },
@@ -105,61 +93,81 @@ export default function SignDemo() {
         </div>
       </div>
 
-      {/* ── Bottom drawer (overlays on top of canvas) ── */}
-      {drawerOpen && (
-        <div className="absolute bottom-0 left-0 right-0 z-30 demo-drawer">
-          {/* Playback controls */}
-          <div className="px-3 pt-2 pb-1">
-            <PlaybackControls onPlaySequence={handlePlaySequence} />
-          </div>
+      {/* ── 右：按钮面板 ~40% ── */}
+      <div className="w-[40%] min-w-[280px] max-w-[420px] border-l border-slate-700/60 bg-slate-900/80 flex flex-col">
+        {/* 顶部播放控制 */}
+        <div className="px-4 pt-3 pb-2 border-b border-slate-700/40">
+          <PlaybackControls onPlaySequence={handlePlaySequence} />
+        </div>
 
-          {/* Category filter tabs */}
-          <div className="flex gap-2 px-3 py-1.5">
+        {/* 滚动按钮区 */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-5">
+          {/* CSL 手语组 */}
+          <ButtonGroup
+            title="CSL 手语"
+            signs={CSL_SIGNS}
+            currentSignId={currentSignId}
+            onClick={handleCardClick}
+          />
+          {/* ASL 字母组 */}
+          <ButtonGroup
+            title="ASL 字母"
+            signs={ASL_SIGNS}
+            currentSignId={currentSignId}
+            onClick={handleCardClick}
+            aslStyle
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 按钮组 ──
+function ButtonGroup({
+  title,
+  signs,
+  currentSignId,
+  onClick,
+  aslStyle = false,
+}: {
+  title: string;
+  signs: typeof SIGN_DEFINITIONS;
+  currentSignId: string | null;
+  onClick: (id: string) => void;
+  aslStyle?: boolean;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">{title}</h3>
+        <span className="text-[10px] text-slate-600">{signs.length} 项</span>
+      </div>
+      <div className={aslStyle
+        ? "grid grid-cols-3 gap-2"
+        : "grid grid-cols-2 gap-2"
+      }>
+        {signs.map(sign => {
+          const isActive = currentSignId === sign.id;
+          const cc = CATEGORY_COLORS[sign.category] ?? CATEGORY_COLORS['日常基础'];
+          return (
             <button
-              onClick={() => setActiveCategory(null)}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all duration-150 ${
-                activeCategory === null
-                  ? 'bg-slate-600/80 text-white'
-                  : 'bg-slate-800/50 text-slate-400 hover:text-slate-300'
+              key={sign.id}
+              onClick={() => onClick(sign.id)}
+              className={`rounded-lg border px-3 py-2 text-sm font-medium transition-all duration-150 ${
+                isActive
+                  ? `${cc.bg} ${cc.text} border ${cc.border} shadow-lg`
+                  : 'bg-slate-800/60 text-slate-300 border-slate-700/40 hover:bg-slate-700/60 hover:text-white'
               }`}
             >
-              全部
+              <div className="flex flex-col items-center gap-0.5">
+                <span className={aslStyle ? "text-lg leading-none" : "text-sm"}>{sign.name}</span>
+                <span className="text-[10px] text-slate-500">{sign.nameEn}</span>
+              </div>
             </button>
-            {categories.map(cat => {
-              const cc = CATEGORY_COLORS[cat] ?? CATEGORY_COLORS['日常基础'];
-              return (
-                <button
-                  key={cat}
-                  onClick={() => setActiveCategory(cat)}
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all duration-150 ${
-                    activeCategory === cat
-                      ? `${cc.bg} ${cc.text} border ${cc.border}`
-                      : 'bg-slate-800/50 text-slate-400 hover:text-slate-300'
-                  }`}
-                >
-                  {cat}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Sign cards — compact horizontal scroll */}
-          <div className="px-3 pb-3 overflow-x-auto">
-            <div className="flex gap-2">
-              {SIGN_DEFINITIONS
-                .filter(s => activeCategory === null || s.category === activeCategory)
-                .map(sign => (
-                  <SignCard
-                    key={sign.id}
-                    sign={sign}
-                    isActive={currentSignId === sign.id}
-                    onClick={() => handleCardClick(sign.id)}
-                  />
-                ))}
-            </div>
-          </div>
-        </div>
-      )}
+          );
+        })}
+      </div>
     </div>
   );
 }

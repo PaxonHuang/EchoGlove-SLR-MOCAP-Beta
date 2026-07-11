@@ -30,7 +30,7 @@ export interface SignDefinition {
   id: string;
   name: string;         // Chinese name
   nameEn: string;       // English name
-  category: '日常基础' | '情绪表达' | '日常动作';
+  category: '日常基础' | '情绪表达' | '日常动作' | 'ASL字母';
   description: string;  // short description
   keyframes: AngleKeyframe[];
   wave?: {              // optional wave animation (for goodbye)
@@ -292,6 +292,152 @@ export const SIGN_DEFINITIONS: SignDefinition[] = [
       axis: 'x',
     },
   },
+
+  // ═══════════════════════════════════════════════════════════════
+  //  ASL 字母（单关键帧静态 pose：rest→pose→hold 900ms→settle）
+  //  角度与 asl_classifier ASL_TEMPLATES 意图一致（哪些指屈/直），
+  //  使屏幕 pose 与分类字母语义对应。腕姿中立 quat(0,0,0)。
+  //  thumb [CMC,MCP,IP]，四指 [MCP,PIP,DIP]，单位度。
+  // ═══════════════════════════════════════════════════════════════
+
+  // ─── A: 拳，拇指 tucked 于食指侧 ───
+  {
+    id: 'asl_a',
+    name: 'A',
+    nameEn: 'ASL-A',
+    category: 'ASL字母',
+    description: '握拳，拇指屈于食指侧面',
+    keyframes: [
+      {
+        jointAngles: makeAngles({
+          thumb: [45, 50, 65],
+          index: [85, 100, 70],
+          middle: [85, 100, 70],
+          ring: [85, 100, 70],
+          pinky: [85, 100, 70],
+        }),
+        wristQuat: quat(0, 0, 0),
+        duration: 350,
+        easing: 'easeOut',
+      },
+    ],
+  },
+
+  // ─── B: 平掌，四指并拢伸直，拇指折向掌心 ───
+  {
+    id: 'asl_b',
+    name: 'B',
+    nameEn: 'ASL-B',
+    category: 'ASL字母',
+    description: '平掌，四指并拢伸直，拇指折于掌心',
+    keyframes: [
+      {
+        jointAngles: makeAngles({
+          thumb: [50, 25, 25],
+          index: [5, 5, 5],
+          middle: [5, 5, 5],
+          ring: [5, 5, 5],
+          pinky: [5, 5, 5],
+        }),
+        wristQuat: quat(0, 0, 0),
+        duration: 350,
+        easing: 'easeOut',
+      },
+    ],
+  },
+
+  // ─── I: 拳，仅小指伸直 ───
+  {
+    id: 'asl_i',
+    name: 'I',
+    nameEn: 'ASL-I',
+    category: 'ASL字母',
+    description: '握拳，仅小指伸直朝上',
+    keyframes: [
+      {
+        jointAngles: makeAngles({
+          thumb: [40, 45, 60],
+          index: [85, 100, 70],
+          middle: [85, 100, 70],
+          ring: [85, 100, 70],
+          pinky: [5, 5, 5],
+        }),
+        wristQuat: quat(0, 0, 0),
+        duration: 350,
+        easing: 'easeOut',
+      },
+    ],
+  },
+
+  // ─── L: 食指上 + 拇指出，90° ───
+  {
+    id: 'asl_l',
+    name: 'L',
+    nameEn: 'ASL-L',
+    category: 'ASL字母',
+    description: '食指直立朝上，拇指侧伸呈90°，余指屈',
+    keyframes: [
+      {
+        jointAngles: makeAngles({
+          thumb: [15, 10, 10],
+          index: [5, 5, 5],
+          middle: [85, 100, 70],
+          ring: [85, 100, 70],
+          pinky: [85, 100, 70],
+        }),
+        wristQuat: quat(0, 0, 0),
+        duration: 350,
+        easing: 'easeOut',
+      },
+    ],
+  },
+
+  // ─── W: 食/中/小指三指上（无名指屈）───
+  // 注意：无名指硬件故障归一化为屈，W 的视觉由食/中/小指直构成
+  {
+    id: 'asl_w',
+    name: 'W',
+    nameEn: 'ASL-W',
+    category: 'ASL字母',
+    description: '食指/中指/小指三指直立，无名指屈',
+    keyframes: [
+      {
+        jointAngles: makeAngles({
+          thumb: [40, 45, 60],
+          index: [5, 5, 5],
+          middle: [5, 5, 5],
+          ring: [85, 100, 70],
+          pinky: [85, 100, 70],
+        }),
+        wristQuat: quat(0, 0, 0),
+        duration: 350,
+        easing: 'easeOut',
+      },
+    ],
+  },
+
+  // ─── Y: 拇指 + 小指伸出（hang-loose）───
+  {
+    id: 'asl_y',
+    name: 'Y',
+    nameEn: 'ASL-Y',
+    category: 'ASL字母',
+    description: '拇指与小指伸出，余三指屈（松手手势）',
+    keyframes: [
+      {
+        jointAngles: makeAngles({
+          thumb: [10, 10, 10],
+          index: [85, 100, 70],
+          middle: [85, 100, 70],
+          ring: [85, 100, 70],
+          pinky: [10, 10, 10],
+        }),
+        wristQuat: quat(0, 0, 0),
+        duration: 350,
+        easing: 'easeOut',
+      },
+    ],
+  },
 ];
 
 // ── Category Colors ──
@@ -299,6 +445,7 @@ export const CATEGORY_COLORS: Record<string, { bg: string; text: string; border:
   '日常基础': { bg: 'bg-blue-500/15', text: 'text-blue-400', border: 'border-blue-500/30' },
   '情绪表达': { bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30' },
   '日常动作': { bg: 'bg-emerald-500/15', text: 'text-emerald-400', border: 'border-emerald-500/30' },
+  'ASL字母': { bg: 'bg-purple-500/15', text: 'text-purple-400', border: 'border-purple-500/30' },
 };
 
 // ── Sign ID to Definition lookup ──
