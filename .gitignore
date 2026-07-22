@@ -104,3 +104,8 @@ node_modules/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+
+# External competitor reference screenshots (Noitom PN3 etc.) stay OUTSIDE the
+# repo in the parent dir as local reference only. Listed in case copied in.
+/pn3-full.png
+/pnstudio-spec.png
