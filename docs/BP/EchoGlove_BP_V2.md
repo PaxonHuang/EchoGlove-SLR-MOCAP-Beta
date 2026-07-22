@@ -3,7 +3,7 @@
 > **版本**: V2.0 (产业级, 替代旧版大学生创新大赛级BP)
 > **日期**: 2026-07-23
 > **用途**: 具身智能探月社区(北京海淀中关村具身智能创新产业园) / WRC / 京东 战略合作"专属直通送审通道"展位
-> **状态**: 草稿待用户审核 → 后续改写 Word
+> **状态**: V2.0 审核修正版 → 改写 Word
 > **真实性原则**: 全文按"已实现 / 工程可实现(6-12月) / 需研发验证 / 长期方向"四级标注, 不写想象中的能力
 
 ---
@@ -76,13 +76,13 @@ AI演进: 互联网数据→LLM→文本智能; 现实世界数据→多模态�
 |------|---------------|---------------|
 | 定位 | 规模化消费入口 | 具身智能数据入口 |
 | MCU | ESP32-S3 N16R8 | ESP32-P4 (主) + ESP32-S3 (节点) |
-| 传感 | 5×Flex + LSM6DSV16X IMU | 高精度IMU + 柔性eSkin + 力接口 + EGO Camera接口 + Depth接口 |
-| 通信 | BLE/WiFi | ESP-NOW + 有线UART + USB-C + (生产)WiFi/UDP |
+| 传感 | 5×Flex✅ + LSM6DSV16X IMU🟡 | 高精度IMU🟡 + 柔性eSkin🔬 + 力接口🔬 + EGO Camera接口🟡 + Depth接口🔬 |
+| 通信 | BLE/WiFi🟡 | ESP-NOW✅ + 有线UART🟡 + USB-C✅ + (生产)WiFi/UDP🟡 |
 | 视觉 | 无 (预留) | 外接EGO Camera (D7, 第一代不内置) |
 | BOM目标 | <¥500 | 企业级 (TBD, 量级¥1-2k) |
 | 输出 | 11维/hand + 手语分类 | 双表示层 (MANO + Robot Action) |
 | 目标用户 | 听障/教育/XR/消费 | 机器人厂商/AI公司/科研/工业遥操 |
-| 上市 | 2026 H2 | 2027 |
+| 上市 | 2026 H2 原型 / 2027 量产 | 2027 |
 
 ### 3.2 双表示层 (核心壁垒, D3)
 **Layer A — MANO数字人表示**: MANO参数 + 21关节位置 + 网格形变 + 手部位姿。服务Unity/Unreal/Blender/XR/数字人/手语动画。兼容现有数字化生态。
@@ -104,7 +104,7 @@ AI演进: 互联网数据→LLM→文本智能; 现实世界数据→多模态�
 | LSM6DSV16X | 保留/升级 | 工业级IMU, SFLP融合, $2-4, 值得保留甚至升9轴 |
 | 2.2" Flex | Lite保留 / Pro升级eSkin | Flex一致性/老化/标定/无力信息是最大风险, Pro必须升级 |
 | ADS1115 | 已移除(V6) | internal ADC1替代, 节省BOM |
-| UWB | 重新论证 | egocentric VLA下可能冗余(视觉可给位姿), 建议Pro可选/Lite不做 |
+| UWB | 重新论证(结论: Pro可选/Lite不做) | egocentric VLA下可能冗余(视觉可给位姿), 增BOM成本; Pro可选定位增强, Lite不做 |
 
 ---
 
@@ -171,11 +171,11 @@ Hand Foundation Representation: Hand State Token
 
 ## 第6章 竞争分析
 
-> ⏳ **待补**: 四个并行研究Agent正在抓取~30个参考链接(数据手套/视觉手部追踪/机器人数据采集平台/学术算法+人体模型), 产出定量矩阵后将填入本章。预期含: Manus/SenseGlove/HaptX/CyberGlove/Rokoko/Noitom/LucidVR/StretchSense; MediaPipe/Ultraleap/Meta/Apple/Move AI; UMI/ALOHA/Gello/DexCap/AnyTeleop/Open X-Embodiment/DROID; MANO/SMPL-X/CorrNet/AdaptSign/DSTA-SLR/PenSLR。
+> ✅ **已完成**: 四类竞品并行研究已落盘 `docs/BP/research_1~4_*.md`(数据手套/视觉手部追踪/机器人数据采集平台/学术算法与人体模型), 本章为送审精简版, 完整定量矩阵与来源见附录研究文档。覆盖: Manus/SenseGlove/HaptX/CyberGlove/Rokoko/Noitom/LucidVR/StretchSense; MediaPipe/Ultraleap/Meta/Apple/Move AI; UMI/ALOHA/GELLO/DexCap/AnyTeleop/TeleMoMa/TeleVision/Franka-DROID/RH20T/π0/OpenX; MANO/SMPL-X/MS-MANO/manopth/CorrNet/DSTA-SLR/PenSLR。
 
 ### 6.1 竞争格局总览
 
-竞品分四类: ①专业数据手套 ②视觉手部追踪 ③机器人数据采集平台 ④学术算法与人体模型。完整定量矩阵见附录研究文档(`docs/BP/research_1~4_*.md`)。下表为送审精简版。
+竞品分四类: ①专业数据手套 ②视觉手部追踪 ③机器人数据采集平台 ④学术算法与人体模型。完整定量矩阵见附录研究文档(`docs/BP/research_1~4_*.md`)。下表为送审精简版(机器人平台研究全表 15 项, 本章精简 10 项)。
 
 ### 6.2 专业数据手套 (商用)
 
@@ -185,7 +185,7 @@ Hand Foundation Representation: Hand State Token
 | SenseGlove Nova 2 | 线缆伸缩(4指,小指不追踪) | 未公开 | 未公开 | 有(磁摩擦刹车20N/指) | Unity/Unreal, ROS未公开 | €3,999-6,299 | 小指不追踪/无数据集/ROS缺位 |
 | HaptX G1 | 磁式动捕+微流控 | 36 | 0.3mm RMS | 有(178N/手,135触觉点) | Unity/Unreal/ROS1&2 | ~$5,000(非官方) | 纯高端/重/价格不透明 |
 | CyberGlove III | HyperSensor flex | 18-22 | <1°分辨率 | 无 | VirtualHand C++(老旧) | 询价 | SDK过时(WinXP/Vista)/无现代引擎/无开源 |
-| Rokoko Smartgloves II | IMU+可选EMF | 39输出 | 定性"毫米" | 无 | Unity/Unreal/ROS/Blender | ~$2,500(¥375k JPY) | 无触觉/无数据集/OpenXR缺位 |
+| Rokoko Smartgloves II | IMU+可选EMF | 39输出 | 定性"毫米" | 无 | Unity/Unreal/ROS/Blender | ~$2,500(375,000日元) | 无触觉/无数据集/OpenXR缺位 |
 | Noitom PN3/Studio | IMU 9轴 | 未公开(手指) | Roll/Pitch1°/Yaw2° | 无 | Axis Studio(专有) | 询价 | 手指DoF不透明/闭源/无数据平台 |
 | StretchSense | 柔性电容拉伸 | 22+ | 0.6%追踪 | 无 | "平台无关"细节不透明 | $895/双 | 无触觉/SDK不透明/无开源 |
 | LucidVR/lucidgloves | 电位器+伺服力反馈 | ~5指 | 未公开 | 有(5×9g舵机) | SteamVR/OpenVR | ~$60 DIY | 无精度数据/工程化弱/无平台 |
@@ -218,7 +218,7 @@ Hand Foundation Representation: Hand State Token
 
 ### 6.5 竞争空白综合判断 (EchoGlove切入逻辑)
 
-**结构性空白①——"手套形态+人手侧力/触觉"三元组无直接竞品**: 全部15个机器人平台/数据集中, 力信号仅Baxter/Franka/RH20T/LEAP四家有且**全是机器人侧**; **无一家提供人手侧力/触觉流**——DexCap是手套但无力触觉, AnyTeleop/TeleMoMa纯视觉, TeleVision论文明确承认缺haptic。EchoGlove"可穿戴+本体感觉+力/触觉"在公开生态中独占。
+**结构性空白①——"手套形态+人手侧力/触觉"三元组无直接竞品**: 研究全表 15 个机器人平台/数据集中, 力信号仅 Baxter(SEA 扭矩)/Franka(关节扭矩)/RH20T(F/T+指尖触觉阵列)/LEAP(电流环近似)四家有且**全是机器人侧**(Baxter/LEAP 见 `research_3` 全表, 本章精简表未列); **无一家提供人手侧力/触觉流**——DexCap 是手套但无力触觉, AnyTeleop/TeleMoMa 纯视觉, TeleVision 论文明确承认缺 haptic。EchoGlove"可穿戴+本体感觉+力/触觉"在公开生态中独占。
 
 **结构性空白②——价格带断层**: 高端€4,500-$5,000+纯企业, 低端$60 DIY工程化弱; **$200-800成品化+精度承诺消费级几乎无人占据**。π0已证明10000小时数据是VLA上限决定因素, 低成本是规模化采集唯一路径。
 
@@ -246,12 +246,12 @@ Hand Foundation Representation: Hand State Token
 
 | 时间 | 里程碑 | 关键交付 | 真实性 |
 |------|--------|---------|--------|
-| 2026 Q3 | V7 双产品线 | Lite原型定型、Pro架构、外接EGO Camera接口、ROS2 SDK骨架、LSM6DSV16X驱动落地 | 工程可实现 |
-| 2026 Q4 | Pro原型 | MANO双表示层、MediaPipe+glove融合验证、连续手语benchmark建立 | 工程可实现+需验证 |
-| 2027 | Robotics Platform | 机器人遥操作、VLA数据采集、机械臂示教联调、首批商业行业数据集 | 需研发验证 |
+| 2026 Q3 | V7 架构启动 | Pro架构定型、外接EGO Camera接口与D9双生态协议栈设计、ROS2 SDK骨架、LSM6DSV16X驱动攻关 | 工程可实现 |
+| 2026 Q4 | Lite原型定型 + Pro原型 | Lite原型定型、MANO双表示层、MediaPipe+glove融合验证、连续手语benchmark建立 | 工程可实现+需验证 |
+| 2027 | Robotics Platform + 数据平台 | 机器人遥操作、VLA数据采集、机械臂示教联调、Open Core数据平台上线、首批商业行业数据集 | 需研发验证 |
 | 2028+ | Human Hand Foundation Model | 人体手部智能数据基础设施、力反馈、AI眼镜深度融合 | 长期方向 |
 
-**传感器升级路线**: Lite保留Flex(成本) → Pro升级柔性电阻/电容eSkin(主力) → 力传感接入 → (远期)sEMG。深度相机选型(结构光/双目/ToF)在2026 Q4融合验证阶段定型, 开发期用Intel RealSense, 量产按成本切ToF模块。
+**传感器升级路线**: Lite保留Flex(成本) → Pro升级柔性电阻/电容eSkin(主力) → 力传感接入 → (远期)sEMG。深度相机选型(结构光/双目/ToF)在2026 Q4融合验证阶段定型, 开发期用 RealSense 或等同结构光模组, 量产按成本切ToF模块。
 
 **必须补测指标(诚实)**: 连续手语延迟/字词错误率、端到端E2E延迟、多模态时间同步精度、Flex量产一致性、IMU yaw漂移动态值。
 
