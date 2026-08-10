@@ -26,10 +26,13 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 # Mapping from model *name* → Python class path
 # ---------------------------------------------------------------------------
+# The real V6 models (Tier1CNN, GatedBiCrossAttention) are bare nn.Module
+# subclasses; they are wrapped by the BaseModel adapters in ``adapters.py``.
+# ``stgcn_v1`` (STGCNModel) is a visual-side model — kept in the YAML catalog
+# for reference but not loadable here; add an adapter if it is ever activated.
 _MODEL_CLASS_MAP: Dict[str, str] = {
-    "cnn_attention_v2": "src.models.l1_cnn_attention:L1EdgeModel",
-    "ms_tcn_v1": "src.models.l1_ms_tcn:MSTCNModel",
-    "stgcn_v1": "src.models.stgcn_model:STGCNModel",
+    "cnn_attention_v2": "src.models.adapters:Tier1Adapter",
+    "gated_cross_attn_v1": "src.models.adapters:CrossAttnAdapter",
 }
 
 
@@ -106,11 +109,11 @@ class ModelRegistry:
         if active_l2:
             self._load_model("l2", active_l2)
 
-        # Warm-up
+        # Warm-up (11-dim V6 feature vector; L2 = concatenated [left ‖ right])
         if self.l1_model is not None:
-            self._warmup(self.l1_model, input_shape=(1, 21))
+            self._warmup(self.l1_model, input_shape=(1, 11))
         if self.l2_model is not None:
-            self._warmup(self.l2_model, input_shape=(1, 30, 21))
+            self._warmup(self.l2_model, input_shape=(1, 22))
 
     # ------------------------------------------------------------------
     # Public API
@@ -148,10 +151,10 @@ class ModelRegistry:
         old_model = self.l1_model if level == "l1" else self.l2_model
         self._load_model(level, model_name)
 
-        # Warm-up
+        # Warm-up (11-dim; L2 = concatenated [left ‖ right])
         new_model = self.l1_model if level == "l1" else self.l2_model
         if new_model is not None:
-            shape = (1, 21) if level == "l1" else (1, 30, 21)
+            shape = (1, 11) if level == "l1" else (1, 22)
             self._warmup(new_model, input_shape=shape)
 
         # Release old

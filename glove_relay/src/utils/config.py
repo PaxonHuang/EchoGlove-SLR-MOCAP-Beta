@@ -13,6 +13,7 @@ Usage
 """
 
 
+import os
 import yaml
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -181,6 +182,12 @@ def _build_config(relay_path: Path = _DEFAULT_RELAY_CFG) -> RelayConfig:
         for k, v in raw["mock"].items():
             if hasattr(cfg.mock, k):
                 setattr(cfg.mock, k, v)
+
+    # Environment override: RELAY_MOCK=1 forces mock on (frontend dev / demos
+    # without hardware). Takes precedence over the YAML default.
+    env_mock = os.environ.get("RELAY_MOCK", "").strip().lower()
+    if env_mock:
+        cfg.mock.enabled = env_mock in ("1", "true", "yes", "on")
 
     return cfg
 

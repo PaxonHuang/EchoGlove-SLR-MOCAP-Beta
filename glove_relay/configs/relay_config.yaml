@@ -57,8 +57,11 @@ tts:
   cache_dir: "data/tts_cache"
 
 # --- Mock data source (hardware bypass for development) ---
+# Default OFF so the relay starts against real hardware (USB CDC / UDP) and
+# the model registry loads. For frontend dev / demos without hardware, enable
+# mock at runtime with:  RELAY_MOCK=1 uvicorn src.main:app
 mock:
-  enabled: true          # set to false to use real UDP/USB hardware
-  fps: 30                # messages per second
+  enabled: false          # set to true, or export RELAY_MOCK=1, to bypass hardware
+  fps: 30                 # messages per second
   gesture_cycle_seconds: 3.0
   noise_std: 0.02

@@ -3,6 +3,11 @@
 # =============================================================================
 # The *active* model for each level is selected at startup (or switched at
 # runtime via the /api/models/switch endpoint).
+#
+# V6 feature vector (11 dims per hand): 5 flex + 3 euler + 3 gyro.
+#   L1 = single hand  (batch, 11); L2 = [left(11) ‖ right(11)] = (batch, 22).
+# The L1/L2 classes here are BaseModel adapters over the real nn.Module
+# architectures (see src/models/adapters.py).
 # =============================================================================
 
 # --- L1 lightweight classifiers (run on relay / edge) ---
@@ -10,33 +15,47 @@ active_l1_model: "cnn_attention_v2"
 
 l1_models:
   - name: "cnn_attention_v2"
-    description: "1D-CNN + Temporal Attention (~34K params)"
+    description: "1D-CNN + SE-Attention (~35K params)"
     checkpoint: "checkpoints/l1_cnn_attention_v2.pt"
-    input_dim: 21          # 15 hall + 6 IMU features per frame
+    init_kwargs:
+      input_dim: 11         # 5 flex + 3 euler + 3 gyro per hand
+      num_classes: 46
+    input_dim: 11
     num_classes: 46
     quantized: false
     metadata:
       flops: 0.42          # estimated MFLOPs
       latency_ms: 1.2      # on Intel i5 (CPU)
 
-  - name: "ms_tcn_v1"
-    description: "Multi-Scale Temporal Convolutional Network (~12K params)"
-    checkpoint: "checkpoints/l1_ms_tcn_v1.pt"
-    input_dim: 21
+# --- L2 heavy classifier (relay-side, triggered on low L1 confidence) ---
+active_l2_model: "gated_cross_attn_v1"
+
+l2_models:
+  - name: "gated_cross_attn_v1"
+    description: "Gated Bi-CrossAttention — dual-hand fusion, 11-dim per hand (~40K params)"
+    checkpoint: "checkpoints/l2_gated_cross_attn_v1.pt"
+    init_kwargs:
+      d_model: 32
+      num_classes: 46
+      input_dim: 11
+    input_dim: 22           # concatenated [left ‖ right]
     num_classes: 46
     quantized: false
     metadata:
-      flops: 0.18
-      latency_ms: 0.8
+      flops: 0.9
+      latency_ms: 2.1
 
-# --- L2 heavy classifier (relay-side, triggered on low L1 confidence) ---
-active_l2_model: "stgcn_v1"
-
-l2_models:
+  # stgcn_v1 kept for reference — ST-GCN is the visual-side model, NOT active
+  # in the V6 glove relay. Not loadable via the registry (no adapter).
   - name: "stgcn_v1"
-    description: "Spatial-Temporal Graph Convolutional Network (~280K params)"
+    description: "Spatial-Temporal Graph Convolutional Network (~280K params) — visual-side, not active"
     checkpoint: "checkpoints/l2_stgcn_v1.pt"
-    input_dim: 21
+    init_kwargs:
+      input_dim: 11
+      hidden_dim: 64
+      num_classes: 46
+      num_frames: 30
+    input_dim: 11
     hidden_dim: 64
     num_classes: 46
     num_frames: 30         # sliding window for temporal modeling

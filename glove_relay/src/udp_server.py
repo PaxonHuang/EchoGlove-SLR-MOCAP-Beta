@@ -201,18 +201,31 @@ class UDPServer:
         return (-1, 0.0)
 
     def _run_l2(self) -> tuple[int, float]:
-        """Run L2 (ST-GCN) model on the buffered window. Returns ``(gesture_id, confidence)``."""
+        """Run L2 (dual-hand cross-attention) on the buffered window."""
         from src.models.model_registry import ModelRegistry
 
         registry = ModelRegistry.instance()
         if registry is not None and registry.l2_model is not None:
             window = np.stack(
                 [
-                    np.array(f.get("left", {}).get("flex", []) + f.get("left", {}).get("imu", []), dtype=np.float32)
+                    np.concatenate(
+                        [
+                            np.array(
+                                f.get("left", {}).get("flex", [])
+                                + f.get("left", {}).get("imu", []),
+                                dtype=np.float32,
+                            ),
+                            np.array(
+                                f.get("right", {}).get("flex", [])
+                                + f.get("right", {}).get("imu", []),
+                                dtype=np.float32,
+                            ),
+                        ]
+                    )
                     for f in self._frame_buffer
                 ],
                 axis=0,
-            )  # (T, 11)
+            )  # (T, 22) = [left(11) ‖ right(11)] per frame
             return registry.l2_model.predict(window.reshape(1, *window.shape))
         logger.debug("No L2 model — returning placeholder")
         return (-1, 0.0)

@@ -28,7 +28,7 @@ class BaseModel(ABC):
     >>> class MyModel(BaseModel, torch.nn.Module):
     ...     def __init__(self):
     ...         super().__init__()
-    ...         self.fc = torch.nn.Linear(21, 46)
+    ...         self.fc = torch.nn.Linear(11, 46)
     ...     def forward(self, x):
     ...         return self.fc(x)
     ...     def predict(self, x):
@@ -37,7 +37,7 @@ class BaseModel(ABC):
     ...         conf, idx = prob.max(dim=-1)
     ...         return idx.item(), conf.item()
     ...     def get_config(self):
-    ...         return {"input_dim": 21, "num_classes": 46}
+    ...         return {"input_dim": 11, "num_classes": 46}
     ...     def get_model_info(self):
     ...         return {"name": "MyModel", "params": sum(p.numel() for p in self.parameters())}
     """
@@ -51,8 +51,8 @@ class BaseModel(ABC):
         ----------
         x:
             Input tensor.  Shape depends on the model:
-            - L1: ``(batch, 21)``
-            - L2: ``(batch, T, 21)``
+            - L1: ``(batch, 11)``  (single-hand V6 feature vector)
+            - L2: ``(batch, 22)``  (concatenated [left(11) ‖ right(11)])
 
         Returns
         -------
