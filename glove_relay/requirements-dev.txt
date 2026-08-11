@@ -1,0 +1,7 @@
+# EchoGlove Relay — Development / Test Dependencies
+# Pinned floors verified against pytorch_env (2026-08-11, M1).
+# Install with:  pip install -r requirements-dev.txt
+# Without these, the pytest suite cannot run (async tests need the asyncio plugin).
+pytest>=9.0
+httpx>=0.28
+pytest-asyncio>=1.4
