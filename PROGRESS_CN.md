@@ -1,6 +1,6 @@
 # PROGRESS_CN.md — 关键里程碑摘要 (中文)
 
-> **权威进度**: `PROGRESS.md`（英文，含代码核实状态表与技术债清单）。本文件为其精简中文摘要，非全量翻译。历史 debug 细节见 `docs/archive/` 与 git 历史。
+> **权威进度**: `PROGRESS.md`（英文，含代码核实状态表与技术债清单）。本文件为其精简的中文摘要，非全量翻译。历史 debug 细节见 `docs/archive/` 与 git 历史。
 
 **最近核实**: 2026-07-10 ｜ **分支**: `feature/v6-dual-s3p4-flex-lsm6dsv16x`
 
@@ -34,7 +34,7 @@
 
 ## 技术债（代码层，待单独 commit 清理）
 
-- `lib_deps` 滞留 `Adafruit BNO08x` + `NimBLE-Arduino`（死依赖，无活跃代码引用）
+- `lib_deps` 滞留 `Adafruit BNO08x` + `NimBLE-Arduino`（注意这是死依赖，无活跃代码引用）
 - `lib/Sensors/ADS1115Manager.h` 未被引用（死代码）
 - `Sensors.h` / `Comms.h` 聚合头注释仍为 V5 描述
 - `CONFIG_UDP_PORT=8888` 标志无运行时实现（V5 历史残留）

@@ -10,7 +10,7 @@
 
 ---
 
-## Competition Demo Fast-Path (2026-07-11, LIVE)
+## Competition Demo Fast-Path (2026-07-11,  LIVE)
 
 A lightweight, on-device demo path for the competition — bypasses the full V5/V6 relay + ST-GCN stack. **S3 flex → USB CDC → rule classifier → WebSocket → React**.
 
@@ -24,7 +24,7 @@ ESP32-S3 (5× flex, internal ADC1)  ──USB CDC "$EG,..."──▶  demo_serve
 
 **Demo features (all live)**:
 - **Dashboard** (desktop): right-main ≥60% panel (fused result hero + sensor/stats 2-col), left 3D MOCAP corner ≤40%. Real-time **forward-kinematics** hand — `FingerChain` nested MCP→PIP→DIP rotation, palm + forearm, flex→15 joint angles. **Auto-speak English** on recognized gesture (confidence ≥ 0.6, debounced per new id; `GESTURE_LABELS_EN`).
-- **Sign teaching page** (手语教学): full-screen enlarged anatomical hand + right button panel — **7 CSL signs** (你/好/再见/快乐/后悔/吃饭/睡觉) + **6 ASL letters** (A/B/I/L/W/Y). Click a button → plays keyframe animation **and** English TTS (CSL → `nameEn`, ASL → letter).
+- **Sign teaching page** (手语 教学): full-screen enlarged anatomical hand + right button panel — **7 CSL signs** (你/好/再见/快乐/后悔/吃饭/睡觉) + **6 ASL letters** (A/B/I/L/W/Y). Click a button → plays keyframe animation **and** English TTS (CSL → `nameEn`, ASL → letter).
 - **TTS**: zero-dependency Web Speech API (`useTTS` / `useGestureTTS` hooks), all English (en-US).
 - **Classifier**: 4-channel A/B/I/L (ring ch3 hardware fault → dropped from active set; W/Y templates retained). Calibration via `glove_relay/scripts/calibrate_demo.py` (8-pose interactive capture, `demo_calibration.json`).
 
