@@ -70,7 +70,8 @@ S3 (flex+IMU) → ESP-NOW 69B → relay(mock/demo)  S3 Lite → ESP-NOW 79B Hand
 ## 4. IMU 融合 — LSM6DSV16X + Madgwick（规范，代码下一包）
 
 - **接线**（V6 既有规格，`docs/V6/03_wiring_diagram.md` §2）：I²C @0x6A（SA0 LOW），S3 GPIO8 SDA / GPIO9 SCL，400kHz；CS 拉高（LOW=SPI）；SDX/SCX 不接。
-- **驱动**：仓库内本地驱动（非 PlatformIO 注册表库）；ODR 建议 104Hz（与 Task_SensorRead 100Hz 对齐），满量程 ±4g / ±2000dps 起步。
+- **驱动**：仓库内本地驱动（非 PlatformIO 注册表库）；ODR **120Hz**（芯片无 104Hz 档，120Hz=0b0110 为最接近档；`Task_SensorRead` 同步 120Hz），满量程 ±4g / ±2000dps 起步。
+- **融合实现**：**Host Madgwick**（β≈0.1，用户已确认；非芯片内置 SFLP 融合）。**物理限制：yaw（绕重力轴旋转）加速度计不可观**——tilt 收敛，yaw 保持有界但不修正（需磁力计或视觉，属 Pro/roadmap）。
 - **姿态**：S3 上跑 **Madgwick**（增益 β≈0.1），输出 **SFLP 四元数**（w,x,y,z）写入 Hand Token `quat[4]`。视觉/VIO 属 Pro/roadmap（D7），S3 不做。
 - **特征落位**：euler 由 quat 派生（roll/pitch/yaw），与 5×flex 组成 11 维特征喂 L1；双手拼接 22 维喂 L2（GatedBiCrossAttention）。
 - **验证目标**：静止 60s 姿态漂移 < 3°；手翻转 90° 响应 < 200ms。
@@ -134,7 +135,7 @@ USB-CDC / UDP → hand_token.parse → 46 类 SLR (GatedBiCrossAttention) → WS
 |--------|------|------|------|
 | M0 | P0 修复 B1/B3/B7 + 验证 | Beta | ✅ 已落地 |
 | M1 | `/setup-env` 补依赖 + 全 app 启动冒烟（pytest 全套） | Beta | 待跑 |
-| M2 | S3 Lite 固件：LSM6DSV16X 驱动 + Madgwick → quat 进特征 | EgoGlove/下轮 | 待排 |
+| M2 | S3 Lite 固件：LSM6DSV16X 驱动 + Madgwick → quat 进特征 | EgoGlove/下轮 | 📋 计划已出 (2026-08-11) |
 | M3 | S3 输出 Hand Token v1 (79B)，relay 解析 | EgoGlove/下轮 | 待排 |
 | M4 | 46 类 SLR 迁 EgoGlove + 数据采集 + 训练 checkpoint | EgoGlove/后续 | 待排 |
 | M5 | BLE/WiFi 通信 + Hand Token v2 Skeleton（V7 roadmap） | EgoGlove/后续 | 🌌 |
